@@ -14,6 +14,10 @@ from rich.table import Table
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 BASE_URL = "https://api.deepseek.com"
 MODEL = "deepseek-chat"
+META_PROMPT_SYSTEM = (
+    "Составь оптимальный промпт для решения следующей задачи. "
+    "Верни только текст промпта без пояснений и комментариев."
+)
 RESPONSE_FORMATS = {
     "text": {"type": "text"},
     "object": {"type": "json_object"},
@@ -38,7 +42,8 @@ def load_env(path: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Запрос к LLM через DeepSeek API")
-    parser.add_argument("--prompt", required=True, help="Текст пользовательского запроса")
+    parser.add_argument("--system", help="Текст системного промпта")
+    parser.add_argument("--user", required=True, help="Текст пользовательского запроса")
     parser.add_argument(
         "--max-tokens",
         type=int,
@@ -58,15 +63,28 @@ def parse_args() -> argparse.Namespace:
         default="text",
         help="Формат ответа модели (по умолчанию: text)",
     )
+    parser.add_argument(
+        "--meta-prompt",
+        action="store_true",
+        help="Сначала сгенерировать оптимальный промпт, затем выполнить основной запрос",
+    )
     return parser.parse_args()
 
 
-def print_request_info(args: argparse.Namespace) -> None:
+def print_request_info(
+    args: argparse.Namespace,
+    *,
+    system: str | None = None,
+    user: str | None = None,
+    stage: str | None = None,
+) -> None:
     meta = Table.grid(padding=(0, 2))
     meta.add_column(style="bold dim")
     meta.add_column()
     meta.add_row("Модель", MODEL)
     meta.add_row("Формат", args.response_format)
+    if stage:
+        meta.add_row("Этап", stage)
     if args.max_tokens is not None:
         meta.add_row("Max tokens", str(args.max_tokens))
     if args.stop_sequences:
@@ -74,8 +92,13 @@ def print_request_info(args: argparse.Namespace) -> None:
 
     console.print(meta)
     console.print()
+    if system:
+        console.print(
+            Panel(system, title="[bold]Система[/bold]", border_style="magenta", padding=(1, 2))
+        )
+        console.print()
     console.print(
-        Panel(args.prompt, title="[bold]Запрос[/bold]", border_style="cyan", padding=(1, 2))
+        Panel(user or args.user, title="[bold]Пользователь[/bold]", border_style="cyan", padding=(1, 2))
     )
 
 
@@ -93,14 +116,47 @@ def render_content(content: str, response_format: str) -> RenderableType:
     return Markdown(content)
 
 
-def print_response(response, elapsed: float, response_format: str) -> None:
+def build_messages(system: str | None, user: str) -> list[dict[str, str]]:
+    messages: list[dict[str, str]] = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": user})
+    return messages
+
+
+def build_request(
+    args: argparse.Namespace,
+    messages: list[dict[str, str]],
+    *,
+    response_format: str | None = None,
+) -> dict:
+    request = {
+        "model": MODEL,
+        "messages": messages,
+        "response_format": RESPONSE_FORMATS[response_format or args.response_format],
+    }
+    if args.max_tokens is not None:
+        request["max_tokens"] = args.max_tokens
+    if args.stop_sequences:
+        request["stop"] = args.stop_sequences
+    return request
+
+
+def call_model(client: OpenAI, request: dict, status: str = "Ожидание ответа модели…") -> tuple:
+    started = time.perf_counter()
+    with console.status(f"[bold cyan]{status}", spinner="dots"):
+        response = client.chat.completions.create(**request)
+    return response, time.perf_counter() - started
+
+
+def print_response(response, elapsed: float, response_format: str, *, title: str = "Ответ") -> None:
     choice = response.choices[0]
     content = choice.message.content or ""
 
     console.print(
         Panel(
             render_content(content, response_format),
-            title="[bold green]Ответ[/bold green]",
+            title=f"[bold green]{title}[/bold green]",
             border_style="green",
             padding=(1, 2),
         )
@@ -129,23 +185,39 @@ def main() -> None:
     if not api_key:
         raise SystemExit("Переменная API_KEY не найдена в .env")
 
-    print_request_info(args)
-
-    request = {
-        "model": MODEL,
-        "messages": [{"role": "user", "content": args.prompt}],
-        "response_format": RESPONSE_FORMATS[args.response_format],
-    }
-    if args.max_tokens is not None:
-        request["max_tokens"] = args.max_tokens
-    if args.stop_sequences:
-        request["stop"] = args.stop_sequences
-
     client = OpenAI(api_key=api_key, base_url=BASE_URL)
-    started = time.perf_counter()
-    with console.status("[bold cyan]Ожидание ответа модели…", spinner="dots"):
-        response = client.chat.completions.create(**request)
-    elapsed = time.perf_counter() - started
+
+    if args.meta_prompt:
+        print_request_info(
+            args,
+            system=META_PROMPT_SYSTEM,
+            user=args.user,
+            stage="1/2 — генерация промпта",
+        )
+        meta_request = build_request(
+            args,
+            build_messages(META_PROMPT_SYSTEM, args.user),
+            response_format="text",
+        )
+        meta_response, meta_elapsed = call_model(
+            client, meta_request, status="Генерация оптимального промпта…"
+        )
+        optimized_prompt = meta_response.choices[0].message.content or ""
+        print_response(meta_response, meta_elapsed, "text", title="Сгенерированный промпт")
+        console.print()
+
+        print_request_info(
+            args,
+            system=args.system,
+            user=optimized_prompt,
+            stage="2/2 — основной запрос",
+        )
+        main_request = build_request(args, build_messages(args.system, optimized_prompt))
+        response, elapsed = call_model(client, main_request)
+    else:
+        print_request_info(args, system=args.system, user=args.user)
+        request = build_request(args, build_messages(args.system, args.user))
+        response, elapsed = call_model(client, request)
 
     print_response(response, elapsed, args.response_format)
 

@@ -13,7 +13,7 @@ from rich.table import Table
 
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 BASE_URL = "https://api.deepseek.com"
-MODEL = "deepseek-chat"
+MODEL = "deepseek-v4-flash"
 META_PROMPT_SYSTEM = (
     "Составь оптимальный промпт для решения следующей задачи. "
     "Верни только текст промпта без пояснений и комментариев."
@@ -49,6 +49,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         metavar="N",
         help="Максимальное число токенов в ответе",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        metavar="T",
+        help="Температура сэмплирования (0–2)",
     )
     parser.add_argument(
         "--stop-sequences",
@@ -87,6 +93,8 @@ def print_request_info(
         meta.add_row("Этап", stage)
     if args.max_tokens is not None:
         meta.add_row("Max tokens", str(args.max_tokens))
+    if args.temperature is not None:
+        meta.add_row("Temperature", str(args.temperature))
     if args.stop_sequences:
         meta.add_row("Stop", ", ".join(args.stop_sequences))
 
@@ -137,6 +145,8 @@ def build_request(
     }
     if args.max_tokens is not None:
         request["max_tokens"] = args.max_tokens
+    if args.temperature is not None:
+        request["temperature"] = args.temperature
     if args.stop_sequences:
         request["stop"] = args.stop_sequences
     return request

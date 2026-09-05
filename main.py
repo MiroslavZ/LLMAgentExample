@@ -13,7 +13,7 @@ from rich.table import Table
 
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 BASE_URL = "https://api.deepseek.com"
-MODEL = "deepseek-v4-flash"
+DEFAULT_MODEL = "deepseek-chat"
 META_PROMPT_SYSTEM = (
     "Составь оптимальный промпт для решения следующей задачи. "
     "Верни только текст промпта без пояснений и комментариев."
@@ -42,6 +42,11 @@ def load_env(path: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Запрос к LLM через DeepSeek API")
+    parser.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help=f"Имя модели (по умолчанию: {DEFAULT_MODEL})",
+    )
     parser.add_argument("--system", help="Текст системного промпта")
     parser.add_argument("--user", required=True, help="Текст пользовательского запроса")
     parser.add_argument(
@@ -87,7 +92,7 @@ def print_request_info(
     meta = Table.grid(padding=(0, 2))
     meta.add_column(style="bold dim")
     meta.add_column()
-    meta.add_row("Модель", MODEL)
+    meta.add_row("Модель", args.model)
     meta.add_row("Формат", args.response_format)
     if stage:
         meta.add_row("Этап", stage)
@@ -139,7 +144,7 @@ def build_request(
     response_format: str | None = None,
 ) -> dict:
     request = {
-        "model": MODEL,
+        "model": args.model,
         "messages": messages,
         "response_format": RESPONSE_FORMATS[response_format or args.response_format],
     }

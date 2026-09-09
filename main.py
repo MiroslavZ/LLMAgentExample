@@ -10,6 +10,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 
 from agent import DEFAULT_MODEL, META_PROMPT_SYSTEM, Agent, RequestResult
+from history import DEFAULT_HISTORY_PATH
 
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 
@@ -36,7 +37,7 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_MODEL,
         help=f"Имя модели (по умолчанию: {DEFAULT_MODEL})",
     )
-    parser.add_argument("--system", help="Текст системного промпта")
+    parser.add_argument("--system", help="Системный промпт диалога (сохраняется, если ещё не задан)")
     parser.add_argument("--user", required=True, help="Текст пользовательского запроса")
     parser.add_argument(
         "--max-tokens",
@@ -67,6 +68,13 @@ def parse_args() -> argparse.Namespace:
         "--meta-prompt",
         action="store_true",
         help="Сначала сгенерировать оптимальный промпт, затем выполнить основной запрос",
+    )
+    parser.add_argument(
+        "--history",
+        type=Path,
+        default=DEFAULT_HISTORY_PATH,
+        metavar="PATH",
+        help=f"Путь к JSON-файлу истории (по умолчанию: ./{DEFAULT_HISTORY_PATH})",
     )
     return parser.parse_args()
 
@@ -160,7 +168,10 @@ def main() -> None:
     if not api_key:
         raise SystemExit("Переменная API_KEY не найдена в .env")
 
-    agent = Agent(api_key)
+    agent = Agent(api_key, history_path=args.history)
+    saved_system = agent.history.get_system_prompt()
+    if saved_system is not None:
+        args.system = saved_system
     request_options = {
         "user": args.user,
         "model": args.model,

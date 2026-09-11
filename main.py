@@ -151,9 +151,18 @@ def print_response(result: RequestResult, response_format: str, *, title: str = 
     meta.add_column()
     if usage is not None:
         meta.add_row(
-            "Токены",
-            f"{usage.prompt_tokens} → {usage.completion_tokens} (всего {usage.total_tokens})",
+            "Токены за запрос",
+            f"вход {usage.prompt_tokens} → выход {usage.completion_tokens} (всего {usage.total_tokens})",
         )
+    else:
+        meta.add_row("Токены за запрос", "API не вернул статистику")
+    total = result.dialogue_usage
+    meta.add_row(
+        "Токены за диалог" + (" (неполные данные)" if total.missing_responses else ""),
+        f"вход {total.prompt_tokens} → выход {total.completion_tokens} (всего {total.total_tokens})",
+    )
+    if total.missing_responses:
+        meta.add_row("Ответов без статистики", str(total.missing_responses))
     meta.add_row("Причина остановки", choice.finish_reason or "—")
     meta.add_row("Время", f"{result.elapsed:.2f} с")
     console.print()

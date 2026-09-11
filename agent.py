@@ -5,7 +5,7 @@ from pathlib import Path
 from openai import OpenAI
 from openai.types.chat import ChatCompletion
 
-from history import DEFAULT_HISTORY_PATH, HistoryManager, Message
+from history import DEFAULT_HISTORY_PATH, DialogueUsage, HistoryManager, Message, TokenUsage
 
 BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
@@ -24,6 +24,7 @@ RESPONSE_FORMATS = {
 class RequestResult:
     response: ChatCompletion
     elapsed: float
+    dialogue_usage: DialogueUsage = DialogueUsage()
 
     @property
     def content(self) -> str:
@@ -85,12 +86,15 @@ class Agent:
 
         started = time.perf_counter()
         response = self._client.chat.completions.create(**request)
-        result = RequestResult(response, time.perf_counter() - started)
-        self.history.add_messages([
-            {"role": "user", "content": user},
-            {"role": "assistant", "content": result.content},
-        ])
-        return result
+        elapsed = time.perf_counter() - started
+        usage = response.usage
+        tokens = None if usage is None else TokenUsage(
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+        )
+        self.history.add_exchange(user, response.choices[0].message.content or "", tokens)
+        return RequestResult(response, elapsed, self.history.get_usage())
 
     def request_with_meta_prompt(
         self,

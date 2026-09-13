@@ -15,6 +15,8 @@ from agent import (
     META_PROMPT_SYSTEM, Agent, CompressionResult, RequestResult,
 )
 from history import DEFAULT_HISTORY_PATH
+from branch_history import BranchHistoryManager
+from context_strategy import SUPPORTED_STRATEGIES
 
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 
@@ -56,7 +58,7 @@ def parse_args() -> argparse.Namespace:
         help=f"Имя модели (по умолчанию: {DEFAULT_MODEL})",
     )
     parser.add_argument("--system", help="Системный промпт диалога (сохраняется, если ещё не задан)")
-    parser.add_argument("--user", required=True, help="Текст пользовательского запроса")
+    parser.add_argument("--user", help="Текст запроса; необязателен для управления ветками")
     parser.add_argument(
         "--max-tokens",
         type=positive_int,
@@ -106,7 +108,56 @@ def parse_args() -> argparse.Namespace:
         "--compress-every", type=positive_int, metavar="N",
         help="Сжимать при накоплении N сообщений сверх last-messages; требует --last-messages (по умолчанию сжатие выключено)",
     )
+    parser.add_argument(
+        "--strategy", choices=SUPPORTED_STRATEGIES,
+        help="Стратегия контекста: window, facts или branch",
+    )
+    parser.add_argument(
+        "--window-size", type=positive_int, metavar="N",
+        help="Число последних сообщений, включая текущий запрос; требует --strategy window или facts",
+    )
+    parser.add_argument(
+        "--branch", type=BranchHistoryManager.validate_name, metavar="NAME",
+        help="Переключиться на существующую ветку (по умолчанию: сохранённая активная ветка, сначала main)",
+    )
+    branch_action = parser.add_mutually_exclusive_group()
+    branch_action.add_argument(
+        "--checkpoint", type=BranchHistoryManager.validate_name, metavar="NAME",
+        help="Сохранить checkpoint: после успешного запроса с --user, иначе из текущего диалога",
+    )
+    branch_action.add_argument(
+        "--create-branch", type=BranchHistoryManager.validate_name, metavar="NAME",
+        help="Создать и активировать ветку; требует --from-checkpoint",
+    )
+    branch_action.add_argument(
+        "--list-branches", action="store_true",
+        help="Показать ветки, активную ветку и checkpoints без обращения к API",
+    )
+    parser.add_argument(
+        "--from-checkpoint", type=BranchHistoryManager.validate_name, metavar="NAME",
+        help="Checkpoint, от которого создаётся новая ветка",
+    )
     args = parser.parse_args()
+    branch_options = (args.branch, args.checkpoint, args.create_branch, args.from_checkpoint, args.list_branches)
+    if any(branch_options) and args.strategy != "branch":
+        parser.error("Аргументы управления ветками требуют --strategy branch")
+    if (args.create_branch is None) != (args.from_checkpoint is None):
+        parser.error("Для создания ветки укажите вместе --create-branch и --from-checkpoint")
+    if args.create_branch is not None and args.branch is not None:
+        parser.error("--create-branch уже активирует новую ветку; не совмещайте его с --branch")
+    if args.list_branches and args.user is not None:
+        parser.error("--list-branches не совмещается с --user")
+    if args.user is None:
+        if not any(branch_options):
+            parser.error("Укажите --user или операцию управления ветками")
+        if args.meta_prompt or args.system is not None:
+            parser.error("--meta-prompt и --system требуют --user")
+    if args.strategy in ("window", "facts") and args.window_size is None:
+        parser.error(f"Для --strategy {args.strategy} необходимо указать --window-size")
+    if args.window_size is not None and args.strategy not in ("window", "facts"):
+        parser.error("--window-size требует --strategy window или facts")
+    if args.strategy is not None and (args.last_messages is not None or args.compress_every is not None):
+        parser.error("--strategy нельзя совмещать с --last-messages или --compress-every")
     if (args.last_messages is None) != (args.compress_every is None):
         console.print(
             "[yellow]Предупреждение: для работы сжатия истории необходимо указать оба аргумента: "
@@ -266,6 +317,22 @@ def print_compression(result: CompressionResult) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.strategy == "branch":
+        history = BranchHistoryManager(args.history, branch=args.branch)
+        # Проверяем имя до запроса, чтобы не тратить API на заведомо неверную команду.
+        if args.checkpoint is not None and args.checkpoint in history.list_checkpoints():
+            raise ValueError(f"Checkpoint уже существует: {args.checkpoint}")
+        if args.create_branch is not None:
+            history.create_branch(args.create_branch, from_checkpoint=args.from_checkpoint)
+        console.print(Text(f"Активная ветка: {history.active_branch}"))
+        if args.list_branches:
+            console.print(Text("Ветки: " + ", ".join(history.list_branches())))
+            console.print(Text("Checkpoints: " + (", ".join(history.list_checkpoints()) or "нет")))
+        if args.user is None:
+            if args.checkpoint is not None:
+                history.create_checkpoint(args.checkpoint)
+                console.print(Text(f"Checkpoint сохранён: {args.checkpoint}"))
+            return
     load_env(ENV_PATH)
 
     api_key = os.environ.get("API_KEY")
@@ -276,6 +343,7 @@ def main() -> None:
         api_key, history_path=args.history,
         last_messages=args.last_messages, compress_every=args.compress_every,
         on_compression=print_compression,
+        strategy=args.strategy, window_size=args.window_size,
     )
     saved_system = agent.history.get_system_prompt()
     if saved_system is not None:
@@ -321,7 +389,13 @@ def main() -> None:
         result, args.response_format,
         context_limit=args.context_limit, max_tokens=args.max_tokens,
     )
+    if args.checkpoint is not None:
+        agent.history.create_checkpoint(args.checkpoint)
+        console.print(Text(f"Checkpoint сохранён: {args.checkpoint}"))
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (ValueError, OSError) as error:
+        raise SystemExit(str(error)) from error

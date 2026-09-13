@@ -11,8 +11,6 @@ from history import DEFAULT_HISTORY_PATH, DialogueUsage, HistoryManager, Message
 
 BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
-DEFAULT_LAST_MESSAGES = 10
-DEFAULT_COMPRESS_EVERY = 10
 SUMMARY_SYSTEM = (
     "Сожми историю диалога в краткое связное summary на языке диалога. "
     "Получишь JSON с предыдущим summary и списком сообщений в хронологическом порядке. "
@@ -52,13 +50,13 @@ class RequestResult:
 class Agent:
     def __init__(
         self, token: str, history_path: str | Path = DEFAULT_HISTORY_PATH, *,
-        last_messages: int = DEFAULT_LAST_MESSAGES,
-        compress_every: int = DEFAULT_COMPRESS_EVERY,
+        last_messages: int | None = None,
+        compress_every: int | None = None,
         on_compression: Callable[[CompressionResult], None] | None = None,
     ) -> None:
-        if type(last_messages) is not int or last_messages < 0:
+        if last_messages is not None and (type(last_messages) is not int or last_messages < 0):
             raise ValueError("last_messages должен быть целым числом не меньше нуля")
-        if type(compress_every) is not int or compress_every <= 0:
+        if compress_every is not None and (type(compress_every) is not int or compress_every <= 0):
             raise ValueError("compress_every должен быть положительным целым числом")
         self.last_messages = last_messages
         self.compress_every = compress_every
@@ -67,6 +65,8 @@ class Agent:
         self._client = OpenAI(api_key=token, base_url=BASE_URL)
 
     def _compress_history(self, model: str) -> None:
+        if self.last_messages is None or self.compress_every is None:
+            return
         messages = self.history.get_compression_messages(self.last_messages)
         if len(messages) < self.compress_every:
             return

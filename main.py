@@ -11,7 +11,7 @@ from rich.table import Table
 from rich.text import Text
 
 from agent import (
-    DEFAULT_COMPRESS_EVERY, DEFAULT_LAST_MESSAGES, DEFAULT_MODEL,
+    DEFAULT_MODEL,
     META_PROMPT_SYSTEM, Agent, CompressionResult, RequestResult,
 )
 from history import DEFAULT_HISTORY_PATH
@@ -99,14 +99,20 @@ def parse_args() -> argparse.Namespace:
         help="Лимит контекста в токенах для сравнения с входом (задаётся явно)",
     )
     parser.add_argument(
-        "--last-messages", type=nonnegative_int, default=DEFAULT_LAST_MESSAGES, metavar="N",
-        help=f"Число последних сообщений, сохраняемых при сжатии (по умолчанию: {DEFAULT_LAST_MESSAGES})",
+        "--last-messages", type=nonnegative_int, metavar="N",
+        help="Число последних сообщений, сохраняемых при сжатии; требует --compress-every (по умолчанию сжатие выключено)",
     )
     parser.add_argument(
-        "--compress-every", type=positive_int, default=DEFAULT_COMPRESS_EVERY, metavar="N",
-        help=f"Сжимать при накоплении N сообщений сверх last-messages (по умолчанию: {DEFAULT_COMPRESS_EVERY})",
+        "--compress-every", type=positive_int, metavar="N",
+        help="Сжимать при накоплении N сообщений сверх last-messages; требует --last-messages (по умолчанию сжатие выключено)",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if (args.last_messages is None) != (args.compress_every is None):
+        console.print(
+            "[yellow]Предупреждение: для работы сжатия истории необходимо указать оба аргумента: "
+            "--last-messages и --compress-every. Агент продолжит работу без сжатия.[/yellow]"
+        )
+    return args
 
 
 def print_request_info(

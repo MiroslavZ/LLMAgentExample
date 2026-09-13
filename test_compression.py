@@ -125,6 +125,53 @@ class CompressionTests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     parse_args()
 
+    def test_cli_compression_options_and_warning(self):
+        for options, expected, warning in [
+            ([], (None, None), False),
+            (["--last-messages", "0"], (0, None), True),
+            (["--compress-every", "1"], (None, 1), True),
+            (["--last-messages", "0", "--compress-every", "1"], (0, 1), False),
+        ]:
+            with self.subTest(options=options):
+                output = io.StringIO()
+                with patch("sys.argv", ["main.py", "--user", "Тест", *options]), patch(
+                    "main.console", Console(file=output, width=240, color_system=None)
+                ):
+                    args = parse_args()
+                self.assertEqual((args.last_messages, args.compress_every), expected)
+                if warning:
+                    self.assertIn("необходимо указать оба аргумента", output.getvalue())
+                    self.assertIn("--last-messages и --compress-every", output.getvalue())
+                    self.assertIn("продолжит работу без сжатия", output.getvalue())
+                else:
+                    self.assertEqual(output.getvalue(), "")
+
+    def test_disabled_compression_preserves_history_at_all_stages(self):
+        for options in ({}, {"last_messages": 0}, {"compress_every": 1}):
+            for meta_prompt in (False, True):
+                with self.subTest(options=options, meta_prompt=meta_prompt):
+                    notify = Mock()
+                    agent = Agent("test", self.path, on_compression=notify, **options)
+                    agent.history.clear()
+                    agent.history.set_system_prompt("Правила")
+                    for index in range(12):
+                        agent.history.add_exchange(f"Вопрос {index}", f"Ответ {index}", None)
+                    original = agent.history.get_messages()
+                    self.create.reset_mock()
+                    self.create.return_value = completion()
+                    if meta_prompt:
+                        agent.request_with_meta_prompt("Новый вопрос")
+                    else:
+                        agent.request("Новый вопрос")
+                    self.assertEqual(self.create.call_count, 2 if meta_prompt else 1)
+                    for call in self.create.call_args_list:
+                        self.assertEqual(call.kwargs["messages"][1:len(original)], original[1:])
+                    saved = HistoryManager(self.path)
+                    self.assertEqual(saved.summary, "")
+                    self.assertEqual(saved.get_messages()[:len(original)], original)
+                    self.assertEqual(len(saved.get_messages()), len(original) + (4 if meta_prompt else 2))
+                    notify.assert_not_called()
+
     def test_notification_after_save_even_if_main_request_fails(self):
         self.agent.history.add_exchange("Второй", "Ответ", None)
         observed = []

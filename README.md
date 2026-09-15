@@ -2,11 +2,30 @@
 
 Агент на Python для запросов к DeepSeek API.
 
-- `agent.py` — класс `Agent`: обычный запрос и запрос с мета-промптингом.
-- `main.py` — консольная обёртка: аргументы, загрузка токена и вывод через Rich.
-- `history.py` — менеджер истории: загрузка, добавление сообщений и очистка JSON-файла.
-- `context_strategy.py` — стратегии скользящего окна и постоянной памяти facts.
-- `branch_history.py` — стратегия веток: checkpoints, независимые диалоги и переключение контекста.
+## Структура проекта
+
+```text
+LLMAgentExample/
+├── llm_agent/              # Код приложения
+│   ├── __init__.py
+│   ├── __main__.py         # Запуск через python -m llm_agent
+│   ├── agent.py            # Agent и запросы к модели
+│   ├── cli.py              # Аргументы CLI, загрузка .env и вывод Rich
+│   ├── history.py          # Хранение истории и статистики токенов
+│   ├── context_strategy.py # Скользящее окно и постоянная память facts
+│   └── branch_history.py   # Ветки диалога и checkpoints
+├── tests/                  # unittest-тесты без обращений к API
+│   ├── __init__.py
+│   ├── helpers.py          # Общие фабрики тестовых данных
+│   └── test_*.py
+├── main.py                 # Точка входа для прежней команды запуска
+├── requirements.txt
+└── README.md
+```
+
+Команды ниже выполняются из корня проекта. Также доступен запуск
+`python -m llm_agent --help`. Импорты Python используют пакет `llm_agent`,
+например `from llm_agent.agent import Agent`.
 
 Установите зависимости: `pip install -r requirements.txt`. Создайте рядом с
 `main.py` файл `.env` с переменной `API_KEY=ваш_токен`. Значение `API_KEY`, уже
@@ -160,8 +179,8 @@ JSON веток содержит `version` (1), `active_branch`, словарь 
 В Python управление доступно через менеджер истории:
 
 ```python
-from agent import Agent
-from branch_history import BranchHistoryManager
+from llm_agent.agent import Agent
+from llm_agent.branch_history import BranchHistoryManager
 
 agent = Agent(token="ваш_токен", history_path="branches.json", strategy="branch")
 agent.request("Общая задача")
@@ -213,7 +232,7 @@ python main.py --history "./history" --user "Как меня зовут?"
 Агента можно использовать без консольной обёртки:
 
 ```python
-from agent import Agent
+from llm_agent.agent import Agent
 
 agent = Agent(token="ваш_токен")
 result = agent.request("Объясни SOLID", temperature=0.5)
@@ -330,4 +349,12 @@ Summary и статистика сохраняются атомарно и ис�
 переданный формат ответа и сохранённый системный промпт диалога. В CLI результаты обоих
 этапов выводятся после завершения всего вызова.
 
-Проверки без обращений к API: `python -m unittest -v`.
+Проверки без обращений к API из корня проекта:
+
+```shell
+python -m unittest discover -s tests -v
+# Один тестовый модуль:
+python -m unittest tests.test_branch -v
+```
+
+Команда `python -m unittest -v` также автоматически находит все тесты.

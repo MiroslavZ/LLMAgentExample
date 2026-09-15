@@ -9,19 +9,19 @@ from unittest.mock import patch
 
 from rich.console import Console
 
-from agent import Agent, META_PROMPT_SYSTEM
-from branch_history import BranchHistoryManager
-from history import DialogueUsage, HistoryManager, TokenUsage
-from main import main, parse_args
-from test_token_usage import completion
+from llm_agent.agent import Agent, META_PROMPT_SYSTEM
+from llm_agent.branch_history import BranchHistoryManager
+from llm_agent.history import DialogueUsage, HistoryManager, TokenUsage
+from llm_agent.cli import main, parse_args
+from tests.helpers import completion
 
 
 class BranchTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.path = Path(directory.name) / "history.json"
-        client = patch("agent.OpenAI")
+        self.path = Path(directory.name) / "llm_agent.history.json"
+        client = patch("llm_agent.agent.OpenAI")
         self.client = client.start()
         self.addCleanup(client.stop)
         self.create = self.client.return_value.chat.completions.create
@@ -33,7 +33,7 @@ class BranchTests(unittest.TestCase):
     def run_cli(self, *options):
         output = io.StringIO()
         with patch("sys.argv", ["main.py", "--history", str(self.path), *options]), patch(
-            "main.console", Console(file=output, width=180, color_system=None),
+            "llm_agent.cli.console", Console(file=output, width=180, color_system=None),
         ):
             main()
         return output.getvalue()
@@ -184,7 +184,7 @@ class BranchTests(unittest.TestCase):
             lambda: history.add_exchange("Новое", "Ответ", TokenUsage(20, 10, 30)),
             history.clear,
         ):
-            for target in ("history.os.fsync", "history.Path.replace"):
+            for target in ("llm_agent.history.os.fsync", "llm_agent.history.Path.replace"):
                 with self.subTest(operation=operation, target=target), patch(target, side_effect=OSError("Disk error")):
                     with self.assertRaises(OSError):
                         operation()
@@ -302,7 +302,7 @@ class BranchTests(unittest.TestCase):
         self.assertEqual(history.facts, {"goal": "Цель"})
 
     def test_cli_management_needs_neither_env_nor_api(self):
-        with patch("main.load_env") as load_env:
+        with patch("llm_agent.cli.load_env") as load_env:
             self.run_cli("--strategy", "branch", "--checkpoint", "start")
             self.run_cli("--strategy", "branch", "--create-branch", "a", "--from-checkpoint", "start")
             self.run_cli("--strategy", "branch", "--create-branch", "b", "--from-checkpoint", "start")
@@ -316,7 +316,7 @@ class BranchTests(unittest.TestCase):
         self.assertEqual(BranchHistoryManager(self.path).active_branch, "a")
 
     def test_cli_checkpoint_after_successful_request_and_branch_selection(self):
-        with patch("main.load_env"), patch.dict("os.environ", {"API_KEY": "test"}):
+        with patch("llm_agent.cli.load_env"), patch.dict("os.environ", {"API_KEY": "test"}):
             self.run_cli("--strategy", "branch", "--user", "Общее", "--checkpoint", "start")
             self.run_cli(
                 "--strategy", "branch", "--create-branch", "a", "--from-checkpoint", "start",

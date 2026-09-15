@@ -1,7 +1,7 @@
 from copy import deepcopy
 from pathlib import Path
 
-from history import DEFAULT_HISTORY_PATH, HistoryManager
+from .history import DEFAULT_HISTORY_PATH, HistoryManager
 
 
 class BranchHistoryManager(HistoryManager):

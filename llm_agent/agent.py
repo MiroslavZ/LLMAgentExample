@@ -7,9 +7,9 @@ from pathlib import Path
 from openai import OpenAI
 from openai.types.chat import ChatCompletion
 
-from branch_history import BranchHistoryManager
-from history import DEFAULT_HISTORY_PATH, DialogueUsage, HistoryManager, Message, TokenUsage
-from context_strategy import SUPPORTED_STRATEGIES, FactsStrategy, WindowStrategy
+from .branch_history import BranchHistoryManager
+from .history import DEFAULT_HISTORY_PATH, DialogueUsage, HistoryManager, Message, TokenUsage
+from .context_strategy import SUPPORTED_STRATEGIES, FactsStrategy, WindowStrategy
 
 BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"

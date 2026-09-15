@@ -7,10 +7,10 @@ from unittest.mock import Mock, patch
 
 from rich.console import Console
 
-from agent import Agent, CompressionResult, META_PROMPT_SYSTEM
-from history import DialogueUsage, HistoryManager, TokenUsage
-from main import parse_args, print_compression
-from test_token_usage import completion
+from llm_agent.agent import Agent, CompressionResult, META_PROMPT_SYSTEM
+from llm_agent.history import DialogueUsage, HistoryManager, TokenUsage
+from llm_agent.cli import parse_args, print_compression
+from tests.helpers import completion
 
 
 def summary_response(content="Краткая история", finish_reason="stop"):
@@ -24,8 +24,8 @@ class CompressionTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.path = Path(directory.name) / "history.json"
-        client = patch("agent.OpenAI")
+        self.path = Path(directory.name) / "llm_agent.history.json"
+        client = patch("llm_agent.agent.OpenAI")
         self.create = client.start().return_value.chat.completions.create
         self.addCleanup(client.stop)
         self.agent = Agent("test", self.path, last_messages=2, compress_every=2)
@@ -86,7 +86,7 @@ class CompressionTests(unittest.TestCase):
 
     def test_save_failure_keeps_memory_and_disk(self):
         original = self.path.read_bytes()
-        with patch("history.os.fsync", side_effect=OSError("Disk error")):
+        with patch("llm_agent.history.os.fsync", side_effect=OSError("Disk error")):
             with self.assertRaises(OSError):
                 self.agent.history.compress(2, "Summary", None)
         self.assertEqual(self.path.read_bytes(), original)
@@ -135,7 +135,7 @@ class CompressionTests(unittest.TestCase):
             with self.subTest(options=options):
                 output = io.StringIO()
                 with patch("sys.argv", ["main.py", "--user", "Тест", *options]), patch(
-                    "main.console", Console(file=output, width=240, color_system=None)
+                    "llm_agent.cli.console", Console(file=output, width=240, color_system=None)
                 ):
                     args = parse_args()
                 self.assertEqual((args.last_messages, args.compress_every), expected)
@@ -197,7 +197,7 @@ class CompressionTests(unittest.TestCase):
             self.agent.request("Третий")
         notify.assert_not_called()
         self.create.return_value = summary_response()
-        with patch("history.os.fsync", side_effect=OSError("Disk error")):
+        with patch("llm_agent.history.os.fsync", side_effect=OSError("Disk error")):
             with self.assertRaises(OSError):
                 self.agent.request("Третий")
         notify.assert_not_called()
@@ -206,7 +206,7 @@ class CompressionTests(unittest.TestCase):
         for usage in (TokenUsage(100, 30, 130), TokenUsage(), None):
             with self.subTest(usage=usage):
                 output = io.StringIO()
-                with patch("main.console", Console(file=output, width=180, color_system=None)):
+                with patch("llm_agent.cli.console", Console(file=output, width=180, color_system=None)):
                     print_compression(CompressionResult(10, usage))
                 rendered = output.getvalue()
                 self.assertIn("Сжатие истории выполнено", rendered)

@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal, TypedDict
 
-from context_strategy import FactsStrategy, WindowStrategy
+from .context_strategy import FactsStrategy, WindowStrategy
 
 DEFAULT_HISTORY_PATH = Path("history.json")
 

@@ -2,7 +2,7 @@ import json
 from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
-    from history import Message
+    from .history import Message
 
 SUPPORTED_STRATEGIES = ("window", "facts", "branch")
 TMessage = TypeVar("TMessage", bound="Message")

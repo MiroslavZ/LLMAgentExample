@@ -6,10 +6,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent import Agent, FACTS_SYSTEM, META_PROMPT_SYSTEM
-from history import DialogueUsage, HistoryManager, TokenUsage
-from main import parse_args
-from test_token_usage import completion
+from llm_agent.agent import Agent, FACTS_SYSTEM, META_PROMPT_SYSTEM
+from llm_agent.history import DialogueUsage, HistoryManager, TokenUsage
+from llm_agent.cli import parse_args
+from tests.helpers import completion
 
 
 def facts_response(updates, *, missing=False):
@@ -22,8 +22,8 @@ class FactsTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.path = Path(directory.name) / "history.json"
-        client = patch("agent.OpenAI")
+        self.path = Path(directory.name) / "llm_agent.history.json"
+        client = patch("llm_agent.agent.OpenAI")
         self.create = client.start().return_value.chat.completions.create
         self.addCleanup(client.stop)
 
@@ -188,7 +188,7 @@ class FactsTests(unittest.TestCase):
         original = self.path.read_bytes()
         self.create.reset_mock()
         self.create.side_effect = [facts_response({"goal": "Новая"})]
-        with patch("history.os.fsync", side_effect=OSError("Disk error")):
+        with patch("llm_agent.history.os.fsync", side_effect=OSError("Disk error")):
             with self.assertRaises(OSError):
                 agent.request("Новая цель")
         self.assertEqual(self.create.call_count, 1)

@@ -5,18 +5,18 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent import Agent, META_PROMPT_SYSTEM
-from history import DialogueUsage, HistoryManager, TokenUsage
-from main import parse_args
-from test_token_usage import completion
+from llm_agent.agent import Agent, META_PROMPT_SYSTEM
+from llm_agent.history import DialogueUsage, HistoryManager, TokenUsage
+from llm_agent.cli import parse_args
+from tests.helpers import completion
 
 
 class WindowTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.path = Path(directory.name) / "history.json"
-        client = patch("agent.OpenAI")
+        self.path = Path(directory.name) / "llm_agent.history.json"
+        client = patch("llm_agent.agent.OpenAI")
         self.create = client.start().return_value.chat.completions.create
         self.addCleanup(client.stop)
         self.create.return_value = completion()

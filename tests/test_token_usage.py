@@ -5,42 +5,20 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from openai.types.chat import ChatCompletion
 from rich.console import Console
 
-from agent import Agent
-from history import DialogueUsage, HistoryManager, TokenUsage
-from main import print_response
-
-
-def completion(prompt=100, output=30, *, missing=False):
-    return ChatCompletion.model_validate({
-        "id": "test-completion",
-        "created": 0,
-        "model": "deepseek-chat",
-        "object": "chat.completion",
-        "choices": [{
-            "index": 0,
-            "finish_reason": "stop",
-            "message": {"role": "assistant", "content": "Ответ"},
-        }],
-        "usage": None if missing else {
-            "prompt_tokens": prompt,
-            "completion_tokens": output,
-            "total_tokens": prompt + output,
-            "prompt_cache_hit_tokens": 80,
-            "prompt_cache_miss_tokens": prompt - 80,
-            "completion_tokens_details": {"reasoning_tokens": 20},
-        },
-    })
+from llm_agent.agent import Agent
+from llm_agent.history import DialogueUsage, HistoryManager, TokenUsage
+from llm_agent.cli import print_response
+from tests.helpers import completion
 
 
 class TokenUsageTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.path = Path(directory.name) / "history.json"
-        client = patch("agent.OpenAI")
+        self.path = Path(directory.name) / "llm_agent.history.json"
+        client = patch("llm_agent.agent.OpenAI")
         self.create = client.start().return_value.chat.completions.create
         self.addCleanup(client.stop)
         self.agent = Agent("test-key", history_path=self.path)
@@ -92,7 +70,7 @@ class TokenUsageTests(unittest.TestCase):
         self.assertEqual(result.dialogue_usage, DialogueUsage(100, 30, 130, 2))
         self.assertEqual(HistoryManager(self.path).get_usage(), result.dialogue_usage)
         output = io.StringIO()
-        with patch("main.console", Console(file=output, width=160, color_system=None)):
+        with patch("llm_agent.cli.console", Console(file=output, width=160, color_system=None)):
             print_response(result, "text")
         rendered = output.getvalue()
         self.assertIn("неполные данные", rendered)
@@ -128,7 +106,7 @@ class TokenUsageTests(unittest.TestCase):
         self.agent.request("Первый")
         result = self.agent.request("Второй")
         output = io.StringIO()
-        with patch("main.console", Console(file=output, width=160, color_system=None)):
+        with patch("llm_agent.cli.console", Console(file=output, width=160, color_system=None)):
             print_response(result, "text")
         rendered = output.getvalue()
         self.assertIn("вход 150 → выход 40 (всего 190)", rendered)
@@ -136,11 +114,11 @@ class TokenUsageTests(unittest.TestCase):
 
 
     def test_large_cumulative_usage_does_not_trigger_context_warning(self):
-        from agent import RequestResult
+        from llm_agent.agent import RequestResult
 
         result = RequestResult(completion(), 0.1, DialogueUsage(2_000_000, 30, 2_000_030))
         output = io.StringIO()
-        with patch("main.console", Console(file=output, width=180, color_system=None)):
+        with patch("llm_agent.cli.console", Console(file=output, width=180, color_system=None)):
             print_response(result, "text", context_limit=1000, max_tokens=200)
         rendered = output.getvalue()
         self.assertIn("100 / 1000 (10.0%)", rendered)
@@ -151,10 +129,10 @@ class TokenUsageTests(unittest.TestCase):
         self.assertIn("2000030", rendered)
 
     def test_context_reserve_overflow_is_reported(self):
-        from agent import RequestResult
+        from llm_agent.agent import RequestResult
 
         output = io.StringIO()
-        with patch("main.console", Console(file=output, width=180, color_system=None)):
+        with patch("llm_agent.cli.console", Console(file=output, width=180, color_system=None)):
             print_response(RequestResult(completion(), 0), "text", context_limit=120, max_tokens=30)
         self.assertIn("превышает заданный лимит", output.getvalue())
         self.assertIn("-10", output.getvalue())

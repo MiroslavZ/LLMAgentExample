@@ -129,7 +129,7 @@ class ChatPage:
             ui.notify("Не удалось создать диалог. Проверьте доступ к хранилищу.", type="negative")
 
     def confirm_delete(self, conversation: Conversation) -> None:
-        async def confirm() -> None:
+        def confirm() -> None:
             dialog.close()
             try:
                 if self.runner.is_running(conversation.id):
@@ -145,13 +145,15 @@ class ChatPage:
             except UI_ERRORS as error:
                 ui.notify(str(error) if isinstance(error, (ValueError, ConversationBusyError)) else "Не удалось удалить диалог.", type="negative")
 
-        with ui.dialog() as dialog, ui.card().classes("delete-dialog"):
+        # Список пересоздаётся при refresh; окно должно переживать очистку его строк.
+        with self.sidebar, ui.dialog() as dialog, ui.card().classes("delete-dialog"):
             ui.label("Удалить диалог?").classes("text-lg font-semibold")
             ui.label(conversation.title).classes("break-words")
             ui.label("Вся переписка и настройки этого диалога будут удалены.").classes("muted")
             with ui.row().classes("w-full justify-end"):
                 ui.button("Отмена", on_click=dialog.close).props("flat no-caps")
                 ui.button("Удалить", on_click=confirm, color="negative").props("unelevated no-caps")
+        dialog.on("hide", dialog.delete)
         dialog.open()
 
     def refresh(self, *, force: bool = False) -> None:
@@ -236,8 +238,8 @@ class ChatPage:
                 empty_chat()
             for turn in self.snapshot.turns:
                 render_turn(turn, restore=lambda text=turn.user: self.restore_text(text), busy=self.busy)
-        if self._near_bottom:
-            ui.timer(0.05, lambda: self.scroll.scroll_to(percent=1, duration=0.2), once=True)
+            if self._near_bottom:
+                ui.timer(0.05, lambda: self.scroll.scroll_to(percent=1, duration=0.2), once=True)
 
     def restore_text(self, text: str) -> None:
         if self.user_input.value and self.user_input.value != text:

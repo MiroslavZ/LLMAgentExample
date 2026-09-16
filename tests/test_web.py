@@ -1,6 +1,7 @@
 """Проверки серверных обработчиков NiceGUI без браузера, сервера и API."""
 
 import asyncio
+import inspect
 import tempfile
 import unittest
 from dataclasses import replace
@@ -8,6 +9,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from nicegui import Client, core, ui
+from nicegui.elements.timer import Timer
 
 from llm_agent.models import ContextSettings, Turn
 from llm_agent.service import ConversationService, ConversationStorageError
@@ -69,6 +71,63 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(page.send_button.enabled)
         self.assertTrue(any("API_KEY" in label for label in self.labels(page.banner)))
         self.assertEqual(len(self.service.list_conversations()), 1)
+
+    async def click_button(self, button):
+        handler = next(listener.handler for listener in button._event_listeners.values()
+                       if listener.type == "click")
+        # Контекст родительского слота, как при настоящем событии NiceGUI.
+        with patch("nicegui.elements.button.handle_event") as dispatch:
+            handler(None)
+        callback = dispatch.call_args.args[0]
+        with button.parent_slot:
+            result = callback()
+            if inspect.isawaitable(result):
+                await result
+
+    async def delete_from_list(self, page, conversation):
+        button = next(element for element in page.conversation_list.descendants()
+                      if isinstance(element, ui.button)
+                      and "delete-conversation" in element.classes
+                      and any(isinstance(sibling, ui.button) and sibling.text == conversation.title
+                              for sibling in element.parent_slot.children))
+        await self.click_button(button)
+        dialog = next(element for element in self.client.elements.values()
+                      if isinstance(element, ui.dialog) and element.value)
+        confirm = next(element for element in dialog.descendants()
+                       if isinstance(element, ui.button) and element.text == "Удалить")
+        with patch("llm_agent.web.page.ui.timer", Timer):
+            await self.click_button(confirm)
+        self.assertFalse(dialog.value)
+        self.assertNotIn(conversation.id, [item.id for item in self.service.list_conversations()])
+        self.assertEqual(page.snapshot.id, page.conversation_id)
+        self.assertTrue(page.send_button.enabled)
+
+    async def test_delete_active_dialogue_from_button_context(self):
+        other = self.service.create()
+        other.title = "Другой диалог"
+        self.service.store.save(other)
+        with self.client:
+            page = self.build_page()
+        await self.delete_from_list(page, self.conversation)
+        self.assertEqual(page.conversation_id, other.id)
+
+    async def test_delete_last_dialogue_from_button_context(self):
+        with self.client:
+            page = self.build_page()
+        await self.delete_from_list(page, self.conversation)
+        self.assertNotEqual(page.conversation_id, self.conversation.id)
+        self.assertEqual(len(self.service.list_conversations()), 1)
+
+    async def test_delete_inactive_dialogue_preserves_active_draft(self):
+        other = self.service.create()
+        other.title = "Другой диалог"
+        self.service.store.save(other)
+        with self.client:
+            page = self.build_page()
+            page.user_input.set_value("Сохранить черновик")
+        await self.delete_from_list(page, other)
+        self.assertEqual(page.conversation_id, self.conversation.id)
+        self.assertEqual(page.user_input.value, "Сохранить черновик")
 
     async def test_select_keeps_each_dialogue_draft_and_request_options(self):
         other = self.service.create()

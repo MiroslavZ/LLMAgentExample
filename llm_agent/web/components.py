@@ -48,6 +48,9 @@ def render_turn(turn: Turn, *, restore: Callable[[], None], busy: bool) -> None:
                 ui.label(format_time(turn.created_at)).classes("message-time")
             # Пользовательский ввод отображаем буквально, включая пробелы и HTML.
             ui.label(turn.user).classes("user-text")
+            ui.button(icon="content_copy", on_click=lambda: ui.clipboard.write(turn.user)).props(
+                'flat round dense size=sm aria-label="Копировать сообщение"'
+            ).classes("copy-user-message").tooltip("Копировать сообщение")
         if turn.meta_prompt is not None:
             with ui.expansion("Сгенерированный промпт", icon="auto_fix_high").classes("meta-result"):
                 ui.markdown(turn.meta_prompt).classes("message-markdown")

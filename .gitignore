@@ -238,6 +238,8 @@ celerybeat.pid
 
 # Environments
 /history.json
+/data/conversations/
+.nicegui/
 .env
 .venv
 env/

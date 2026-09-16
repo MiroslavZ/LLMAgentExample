@@ -76,6 +76,9 @@ class Agent:
         strategy: str | None = None,
         window_size: int | None = None,
         branch: str | None = None,
+        history: HistoryManager | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> None:
         if strategy is not None and strategy not in SUPPORTED_STRATEGIES:
             raise ValueError(f"Неизвестная стратегия: {strategy}")
@@ -97,11 +100,20 @@ class Agent:
         self.last_messages = last_messages
         self.compress_every = compress_every
         self.on_compression = on_compression
-        self.history = (
+        self.history = history if history is not None else (
             BranchHistoryManager(history_path, branch=branch) if strategy == "branch"
             else HistoryManager(history_path, strategy=self._strategy)
         )
-        self._client = OpenAI(api_key=token, base_url=BASE_URL)
+        client_options = {}
+        if timeout is not None:
+            client_options["timeout"] = timeout
+        if max_retries is not None:
+            client_options["max_retries"] = max_retries
+        self._client = OpenAI(api_key=token, base_url=BASE_URL, **client_options)
+
+    def close(self) -> None:
+        """Освободить HTTP-соединения после использования агента сервером."""
+        self._client.close()
 
     def _update_facts(self, user: str, model: str) -> None:
         if not isinstance(self._strategy, FactsStrategy):

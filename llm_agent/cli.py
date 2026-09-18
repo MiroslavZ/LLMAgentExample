@@ -21,6 +21,7 @@ from .memory import (
     DEFAULT_MEMORY_PATH, MEMORY_LAYERS,
     MemorySnapshot, MemoryStorageError, MemoryStore, cli_memory_scope,
 )
+from .profile import ProfileStorageError, ProfileStore, UserProfile
 
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
@@ -62,7 +63,7 @@ def parse_args() -> argparse.Namespace:
         help=f"Имя модели (по умолчанию: {DEFAULT_MODEL})",
     )
     parser.add_argument("--system", help="Системный промпт диалога (сохраняется, если ещё не задан)")
-    parser.add_argument("--user", help="Текст запроса; необязателен для управления ветками и памятью")
+    parser.add_argument("--user", help="Текст запроса; необязателен для управления ветками, памятью и профилями")
     parser.add_argument(
         "--max-tokens",
         type=positive_int,
@@ -162,7 +163,50 @@ def parse_args() -> argparse.Namespace:
         "--memory-show", action="store_true",
         help="Показать три слоя памяти без обращения к API (до запроса, если указан --user)",
     )
+    parser.add_argument(
+        "--profiles-db", type=Path, metavar="PATH",
+        help="База профилей (по умолчанию: profiles.sqlite3 рядом с --memory-db)",
+    )
+    profile_selection = parser.add_mutually_exclusive_group()
+    profile_selection.add_argument(
+        "--profile", metavar="ID",
+        help="Выбрать сохранённый профиль для текущего диалога/ветки и следующих запросов",
+    )
+    profile_selection.add_argument(
+        "--profile-clear", action="store_true",
+        help="Отключить профиль текущего диалога/ветки",
+    )
+    profile_edit = parser.add_mutually_exclusive_group()
+    profile_edit.add_argument(
+        "--profile-import", type=Path, metavar="PATH",
+        help="Создать или заменить профиль из JSON; для выбора добавьте --profile ID",
+    )
+    profile_edit.add_argument(
+        "--profile-delete", metavar="ID",
+        help="Удалить профиль и отключить его во всех диалогах/ветках",
+    )
+    profile_view = parser.add_mutually_exclusive_group()
+    profile_view.add_argument(
+        "--profile-list", action="store_true",
+        help="Показать сохранённые профили без обращения к API",
+    )
+    profile_view.add_argument(
+        "--profile-show", action="store_true",
+        help="Показать выбранный профиль текущего диалога/ветки (null, если профиль отключён)",
+    )
     args = parser.parse_args()
+    if args.profiles_db is None:
+        args.profiles_db = args.memory_db.with_name("profiles.sqlite3")
+    profile_options = (
+        args.profile, args.profile_clear, args.profile_import, args.profile_delete,
+        args.profile_list, args.profile_show,
+    )
+    if any(value is not None and not value.strip() for value in (args.profile, args.profile_delete)):
+        parser.error("ID профиля должен быть непустой строкой")
+    if args.profile_delete is not None and args.profile_delete == args.profile:
+        parser.error("Нельзя одновременно удалить и выбрать один профиль")
+    if args.memory_show and (args.profile_list or args.profile_show):
+        parser.error("--memory-show нельзя совмещать с --profile-list или --profile-show")
     memory_edit = args.memory_set or args.memory_delete
     if memory_edit:
         layer = memory_edit[0]
@@ -180,8 +224,10 @@ def parse_args() -> argparse.Namespace:
     if args.list_branches and args.user is not None:
         parser.error("--list-branches не совмещается с --user")
     if args.user is None:
-        if not any(branch_options) and not (memory_edit or args.memory_show or args.memory_clear_working):
-            parser.error("Укажите --user или операцию управления ветками или памятью")
+        if not any(branch_options) and not any(profile_options) and not (
+            memory_edit or args.memory_show or args.memory_clear_working
+        ):
+            parser.error("Укажите --user или операцию управления ветками, памятью или профилями")
         if args.meta_prompt or args.system is not None:
             parser.error("--meta-prompt и --system требуют --user")
     if args.strategy in ("window", "facts") and args.window_size is None:
@@ -362,8 +408,49 @@ def print_memory(history: HistoryManager, scope: str, snapshot: MemorySnapshot) 
     console.print(Syntax(json.dumps(data, ensure_ascii=False, indent=2), "json", word_wrap=True))
 
 
+def load_profile(path: Path) -> UserProfile:
+    """Проверить импорт целиком до изменения сохранённого профиля."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except FileNotFoundError as error:
+        raise ValueError(f"Файл профиля не найден: {path}") from error
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ValueError(f"Некорректный JSON профиля: {path}") from error
+    return UserProfile.from_dict(data)
+
+
+def apply_profile_options(
+    args: argparse.Namespace, scope: str, imported: UserProfile | None,
+) -> UserProfile | None:
+    store = ProfileStore(args.profiles_db)
+    status = None
+    if imported is not None:
+        store.save(imported)
+        status = f"Профиль сохранён: {imported.id}"
+    elif args.profile_delete is not None:
+        store.delete(args.profile_delete)
+        status = f"Профиль удалён: {args.profile_delete}"
+    if args.profile is not None:
+        store.select(scope, args.profile)
+        status = f"Профиль выбран: {args.profile}"
+    elif args.profile_clear:
+        store.select(scope, None)
+        status = "Профиль текущего диалога/ветки отключён"
+    profile = store.selected(scope)
+    if args.profile_list:
+        data = [saved.to_dict() for saved in store.list()]
+        console.print(Syntax(json.dumps(data, ensure_ascii=False, indent=2), "json", word_wrap=True))
+    elif args.profile_show:
+        data = profile.to_dict() if profile is not None else None
+        console.print(Syntax(json.dumps(data, ensure_ascii=False, indent=2), "json", word_wrap=True))
+    elif status and not args.memory_show:
+        console.print(Text(status))
+    return profile
+
+
 def main() -> None:
     args = parse_args()
+    imported = load_profile(args.profile_import) if args.profile_import is not None else None
     history = None
     if args.strategy == "branch":
         history = BranchHistoryManager(args.history, branch=args.branch)
@@ -372,7 +459,8 @@ def main() -> None:
             raise ValueError(f"Checkpoint уже существует: {args.checkpoint}")
         if args.create_branch is not None:
             history.create_branch(args.create_branch, from_checkpoint=args.from_checkpoint)
-        console.print(Text(f"Активная ветка: {history.active_branch}"))
+        if not (args.memory_show or args.profile_list or args.profile_show):
+            console.print(Text(f"Активная ветка: {history.active_branch}"))
         if args.list_branches:
             console.print(Text("Ветки: " + ", ".join(history.list_branches())))
             console.print(Text("Checkpoints: " + (", ".join(history.list_checkpoints()) or "нет")))
@@ -381,11 +469,18 @@ def main() -> None:
                 history.create_checkpoint(args.checkpoint)
                 console.print(Text(f"Checkpoint сохранён: {args.checkpoint}"))
     memory_action = args.memory_set or args.memory_delete or args.memory_clear_working or args.memory_show
-    if args.user is None and not memory_action:
+    profile_action = (
+        args.profile is not None or args.profile_clear or imported is not None
+        or args.profile_delete is not None or args.profile_list or args.profile_show
+    )
+    if args.user is None and not (memory_action or profile_action):
         return
 
-    history = history or HistoryManager(args.history)
     scope = cli_memory_scope(args.history, getattr(history, "active_branch", None))
+    profile = apply_profile_options(args, scope, imported) if args.user is not None or profile_action else None
+    if args.user is None and not memory_action:
+        return
+    history = history or HistoryManager(args.history)
     store = MemoryStore(args.memory_db)
     if args.memory_set:
         layer, key, value = args.memory_set
@@ -414,7 +509,7 @@ def main() -> None:
         last_messages=args.last_messages, compress_every=args.compress_every,
         on_compression=print_compression,
         strategy=args.strategy, window_size=args.window_size,
-        memory=memory,
+        memory=memory, profile=profile,
     )
     saved_system = agent.history.get_system_prompt()
     if saved_system is not None:
@@ -469,5 +564,5 @@ def run() -> None:
     """Запустить CLI с выводом ожидаемых ошибок без traceback."""
     try:
         main()
-    except (ValueError, OSError, MemoryStorageError) as error:
+    except (ValueError, OSError, MemoryStorageError, ProfileStorageError) as error:
         raise SystemExit(str(error)) from error

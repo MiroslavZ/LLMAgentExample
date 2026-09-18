@@ -12,6 +12,7 @@ from .branch_history import BranchHistoryManager
 from .history import DEFAULT_HISTORY_PATH, DialogueUsage, HistoryManager, Message, TokenUsage
 from .context_strategy import SUPPORTED_STRATEGIES, FactsStrategy, WindowStrategy
 from .memory import MemorySnapshot
+from .profile import UserProfile
 
 BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
@@ -82,6 +83,7 @@ class Agent:
         timeout: float | None = None,
         max_retries: int | None = None,
         memory: MemorySnapshot | None = None,
+        profile: UserProfile | None = None,
     ) -> None:
         if strategy is not None and strategy not in SUPPORTED_STRATEGIES:
             raise ValueError(f"Неизвестная стратегия: {strategy}")
@@ -104,6 +106,9 @@ class Agent:
         self.compress_every = compress_every
         self.on_compression = on_compression
         self.memory = deepcopy(memory) if memory is not None else MemorySnapshot()
+        if profile is not None and not isinstance(profile, UserProfile):
+            raise ValueError("Требуется профиль пользователя")
+        self.profile = profile
         self.history = history if history is not None else (
             BranchHistoryManager(history_path, branch=branch) if strategy == "branch"
             else HistoryManager(history_path, strategy=self._strategy)
@@ -199,7 +204,8 @@ class Agent:
         self._update_facts(user, model)
         return self._request(
             user,
-            messages=self.history.get_messages(),
+            messages=self.history.get_messages(include_system=False),
+            system=self.history.get_system_prompt(),
             model=model,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -212,6 +218,7 @@ class Agent:
         user: str,
         *,
         messages: list[Message],
+        system: str | None,
         model: str,
         max_tokens: int | None,
         temperature: float | None,
@@ -221,6 +228,15 @@ class Agent:
         messages.append({"role": "user", "content": user})
         if self._strategy is not None:
             messages = self._strategy.apply(messages)
+        # Настройки поведения добавляются заново к каждому пользовательскому
+        # этапу, после базовых правил и перед контекстом истории. В служебные
+        # запросы facts/summary профиль не попадает и ими не перезаписывается.
+        instructions: list[Message] = []
+        if system is not None:
+            instructions.append({"role": "system", "content": system})
+        if self.profile is not None:
+            instructions.append(self.profile.to_message())
+        messages = instructions + messages
         # Стратегия управляет только диалогом. Явные слои добавляются после неё
         # и не попадают ни в сохранённую историю, ни в извлечение facts/summary.
         memory_messages = self.memory.to_messages()
@@ -271,11 +287,10 @@ class Agent:
             "temperature": temperature,
             "stop_sequences": stop_sequences,
         }
-        meta_messages: list[Message] = [{"role": "system", "content": META_PROMPT_SYSTEM}]
-        meta_messages.extend(self.history.get_messages(include_system=False))
         meta_result = self._request(
             user,
-            messages=meta_messages,
+            messages=self.history.get_messages(include_system=False),
+            system=META_PROMPT_SYSTEM,
             response_format="text",
             **options,
         )
@@ -283,7 +298,8 @@ class Agent:
         self._compress_history(model)
         result = self._request(
             meta_result.content,
-            messages=self.history.get_messages(),
+            messages=self.history.get_messages(include_system=False),
+            system=self.history.get_system_prompt(),
             response_format=response_format,
             **options,
         )

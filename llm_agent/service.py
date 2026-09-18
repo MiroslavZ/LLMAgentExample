@@ -22,6 +22,7 @@ from .context_strategy import FactsStrategy, WindowStrategy
 from .history import HistoryManager, TokenUsage
 from .models import ContextSettings, Conversation, RequestOptions, Turn, utc_now
 from .memory import MemorySnapshot, MemoryStorageError, MemoryStore
+from .profile import ProfileStorageError, ProfileStore, UserProfile
 from .storage import ConversationBusyError, ConversationStorageError, ConversationStore
 
 
@@ -92,6 +93,8 @@ def _friendly_error(error: Exception) -> str:
         return "Не удалось подтвердить сохранение результата. Проверьте доступ к каталогу данных."
     if isinstance(error, MemoryStorageError):
         return "Не удалось загрузить память. Проверьте файл memory.sqlite3 и доступ к каталогу данных."
+    if isinstance(error, ProfileStorageError):
+        return "Не удалось загрузить профиль. Проверьте файл profiles.sqlite3 и доступ к каталогу данных."
     if isinstance(error, AuthenticationError):
         return "Сервис модели отклонил API-ключ. Проверьте API_KEY на сервере."
     if isinstance(error, RateLimitError):
@@ -119,6 +122,7 @@ class ConversationService:
     def __init__(self, data_dir: Path, token: str | None) -> None:
         self.store = ConversationStore(data_dir)
         self.memory = MemoryStore(self.store.data_dir / "memory.sqlite3")
+        self.profiles = ProfileStore(self.store.data_dir / "profiles.sqlite3")
         self._token = token
         self._state_lock = threading.Lock()
         self._locks: dict[str, threading.Lock] = {}
@@ -215,6 +219,31 @@ class ConversationService:
         self.get(conversation_id)
         return self.memory.snapshot(conversation_id)
 
+    def get_profile(self, conversation_id: str) -> UserProfile | None:
+        self.get(conversation_id)
+        return self.profiles.selected(conversation_id)
+
+    @contextmanager
+    def _profile_operation(self, conversation_id: str) -> Iterator[None]:
+        with self._operation(conversation_id):
+            if self.get(conversation_id).busy:
+                raise ConversationBusyError("Дождитесь завершения запроса перед изменением профиля")
+            yield
+
+    def select_profile(self, conversation_id: str, profile_id: str | None) -> None:
+        with self._profile_operation(conversation_id):
+            self.profiles.select(conversation_id, profile_id)
+
+    def save_profile(
+        self, conversation_id: str, profile: UserProfile, *, expected: UserProfile | None = None,
+    ) -> None:
+        with self._profile_operation(conversation_id):
+            self.profiles.save(profile, expected=expected)
+
+    def delete_profile(self, conversation_id: str, profile_id: str) -> None:
+        with self._profile_operation(conversation_id):
+            self.profiles.delete(profile_id)
+
     @contextmanager
     def _memory_operation(self, conversation_id: str) -> Iterator[None]:
         with self._operation(conversation_id):
@@ -275,12 +304,13 @@ class ConversationService:
             conversation = self.get(conversation_id)
             if conversation.busy:
                 raise ConversationBusyError("Нельзя удалить диалог, пока выполняется запрос")
+            profile = self.profiles.selected(conversation_id)
             deleted = False
             try:
-                with self.memory.deleting_task(conversation_id):
+                with self.memory.deleting_task(conversation_id), self.profiles.deleting_task(conversation_id):
                     self.store.delete(conversation_id)
                     deleted = True
-            except MemoryStorageError:
+            except (MemoryStorageError, ProfileStorageError):
                 if deleted:
                     # Если commit SQLite не удался, возвращаем JSON. При отказе
                     # записи сохраняем снимок в существующем механизме _unsaved.
@@ -289,6 +319,11 @@ class ConversationService:
                     except ConversationStorageError:
                         with self._state_lock:
                             self._unsaved[conversation_id] = deepcopy(conversation)
+                    # Вложенная транзакция профилей могла завершиться до отказа
+                    # памяти; восстанавливаем выбор вместе с возвращённым JSON.
+                    if profile is not None:
+                        with suppress(ProfileStorageError, ValueError):
+                            self.profiles.select(conversation_id, profile.id)
                 raise
             with self._state_lock:
                 self._unsaved.pop(conversation_id, None)
@@ -335,11 +370,13 @@ class ConversationService:
                     self._save(conversation)
                     return deepcopy(conversation)
                 memory = self.memory.snapshot(conversation_id)
+                profile = self.profiles.selected(conversation_id)
                 history = _ConversationHistory(self.store, conversation, started_at)
                 settings = conversation.settings
                 agent_options = {
                     "history": history, "timeout": 60.0, "max_retries": 0,
                     "memory": memory,
+                    "profile": profile,
                 }
                 if settings.strategy in ("window", "facts"):
                     agent_options.update(strategy=settings.strategy, window_size=settings.window_size)

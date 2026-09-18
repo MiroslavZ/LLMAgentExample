@@ -8,11 +8,14 @@ from nicegui import ui
 
 from ..memory import MemoryStorageError
 from ..models import ContextSettings, Conversation, RequestOptions
+from ..profile import ProfileStorageError
 from ..service import ConversationBusyError, ConversationService, ConversationStorageError
 from .components import STRATEGIES, STRATEGY_HELP, empty_chat, render_turn
 from .jobs import RequestRunner
+from .profiles import ProfilePanel
 
-UI_ERRORS = (ValueError, OSError, KeyError, ConversationBusyError, ConversationStorageError, MemoryStorageError)
+UI_ERRORS = (ValueError, OSError, KeyError, ConversationBusyError, ConversationStorageError,
+             MemoryStorageError, ProfileStorageError)
 
 
 @dataclass
@@ -53,6 +56,9 @@ class ChatPage:
         self._memory_available = False
         self._memory_controls: list = []
         self.memory_editors: dict[str, MemoryEditor] = {}
+        self.profile_panel = ProfilePanel(
+            service, conversation_id=lambda: self.conversation_id, busy=lambda: self.busy,
+        )
 
     def build(self) -> None:
         conversations = self.service.list_conversations()
@@ -90,6 +96,9 @@ class ChatPage:
                         self.title = ui.label().classes("chat-title")
                         self.subtitle = ui.label().classes("chat-subtitle")
                     ui.badge("DeepSeek", color="white", text_color="grey-8").props("outline").classes("model-badge")
+                    ui.button(icon="person_outline", on_click=self.profile_panel.open).props(
+                        'flat round aria-label="Профили пользователя"'
+                    ).tooltip("Профили пользователя")
                     ui.button(icon="memory", on_click=self.open_memory).props(
                         'flat round aria-label="Память агента"'
                     ).tooltip("Память агента")
@@ -108,6 +117,7 @@ class ChatPage:
                     ui.button(icon="close", on_click=lambda: self.settings_panel.classes(remove="panel-open")).props(
                         'flat round dense aria-label="Закрыть настройки"'
                     ).classes("mobile-settings ml-auto")
+                self.profile_panel.build()
                 self.settings_content = ui.column().classes("settings-content")
         self.refresh(force=True)
         ui.navigate.history.replace(f"/?conversation={self.conversation_id}")
@@ -133,6 +143,7 @@ class ChatPage:
         self.remember_draft()
         if self.memory_dialog:
             self.memory_dialog.close()
+        self.profile_panel.close()
         self.conversation_id = conversation_id
         self.snapshot = None
         self._near_bottom = True
@@ -222,6 +233,7 @@ class ChatPage:
                 self._banner_key = banner_key
                 self.render_banner(error)
             self.refresh_memory()
+            self.profile_panel.refresh()
         except UI_ERRORS:
             self.subtitle.set_text("Не удалось прочитать диалоги. Проверьте хранилище.")
 

@@ -73,6 +73,8 @@ class Conversation:
     started: bool = False
     settings: ContextSettings = field(default_factory=ContextSettings)
     turns: list[Turn] = field(default_factory=list)
+    # Историческое имя поля JSON: это краткосрочный контекст стратегии,
+    # а не явная рабочая память задачи (она хранится в MemoryStore).
     working_context: object = field(default_factory=list)
     created_at: str = field(default_factory=utc_now)
     updated_at: str = field(default_factory=utc_now)

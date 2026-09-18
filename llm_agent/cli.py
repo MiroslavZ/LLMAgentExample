@@ -14,9 +14,13 @@ from .agent import (
     DEFAULT_MODEL,
     META_PROMPT_SYSTEM, Agent, CompressionResult, RequestResult,
 )
-from .history import DEFAULT_HISTORY_PATH
+from .history import DEFAULT_HISTORY_PATH, HistoryManager
 from .branch_history import BranchHistoryManager
 from .context_strategy import SUPPORTED_STRATEGIES
+from .memory import (
+    DEFAULT_MEMORY_PATH, MEMORY_LAYERS,
+    MemorySnapshot, MemoryStorageError, MemoryStore, cli_memory_scope,
+)
 
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
@@ -58,7 +62,7 @@ def parse_args() -> argparse.Namespace:
         help=f"Имя модели (по умолчанию: {DEFAULT_MODEL})",
     )
     parser.add_argument("--system", help="Системный промпт диалога (сохраняется, если ещё не задан)")
-    parser.add_argument("--user", help="Текст запроса; необязателен для управления ветками")
+    parser.add_argument("--user", help="Текст запроса; необязателен для управления ветками и памятью")
     parser.add_argument(
         "--max-tokens",
         type=positive_int,
@@ -137,7 +141,35 @@ def parse_args() -> argparse.Namespace:
         "--from-checkpoint", type=BranchHistoryManager.validate_name, metavar="NAME",
         help="Checkpoint, от которого создаётся новая ветка",
     )
+    parser.add_argument(
+        "--memory-db", type=Path, default=DEFAULT_MEMORY_PATH, metavar="PATH",
+        help=f"База рабочей и долговременной памяти (по умолчанию: {DEFAULT_MEMORY_PATH})",
+    )
+    memory_action = parser.add_mutually_exclusive_group()
+    memory_action.add_argument(
+        "--memory-set", nargs=3, metavar=("LAYER", "KEY", "VALUE"),
+        help="Сохранить запись: LAYER — working или long_term",
+    )
+    memory_action.add_argument(
+        "--memory-delete", nargs=2, metavar=("LAYER", "KEY"),
+        help="Удалить запись из working или long_term",
+    )
+    memory_action.add_argument(
+        "--memory-clear-working", action="store_true",
+        help="Очистить рабочую память текущего диалога/ветки",
+    )
+    parser.add_argument(
+        "--memory-show", action="store_true",
+        help="Показать три слоя памяти без обращения к API (до запроса, если указан --user)",
+    )
     args = parser.parse_args()
+    memory_edit = args.memory_set or args.memory_delete
+    if memory_edit:
+        layer = memory_edit[0]
+        if layer not in MEMORY_LAYERS:
+            parser.error("LAYER должен быть working или long_term")
+        if any(not value.strip() for value in memory_edit[1:]):
+            parser.error("Ключ и значение памяти должны быть непустыми строками")
     branch_options = (args.branch, args.checkpoint, args.create_branch, args.from_checkpoint, args.list_branches)
     if any(branch_options) and args.strategy != "branch":
         parser.error("Аргументы управления ветками требуют --strategy branch")
@@ -148,8 +180,8 @@ def parse_args() -> argparse.Namespace:
     if args.list_branches and args.user is not None:
         parser.error("--list-branches не совмещается с --user")
     if args.user is None:
-        if not any(branch_options):
-            parser.error("Укажите --user или операцию управления ветками")
+        if not any(branch_options) and not (memory_edit or args.memory_show or args.memory_clear_working):
+            parser.error("Укажите --user или операцию управления ветками или памятью")
         if args.meta_prompt or args.system is not None:
             parser.error("--meta-prompt и --system требуют --user")
     if args.strategy in ("window", "facts") and args.window_size is None:
@@ -315,8 +347,24 @@ def print_compression(result: CompressionResult) -> None:
     )
 
 
+def print_memory(history: HistoryManager, scope: str, snapshot: MemorySnapshot) -> None:
+    """Показать содержимое слоёв, не создавая API-клиент и не меняя историю."""
+    data = {
+        "short_term": {
+            "scope": scope,
+            "history": str(history.path),
+            "branch": getattr(history, "active_branch", None),
+            "messages": history.get_messages(),
+        },
+        "working": snapshot.working,
+        "long_term": snapshot.long_term,
+    }
+    console.print(Syntax(json.dumps(data, ensure_ascii=False, indent=2), "json", word_wrap=True))
+
+
 def main() -> None:
     args = parse_args()
+    history = None
     if args.strategy == "branch":
         history = BranchHistoryManager(args.history, branch=args.branch)
         # Проверяем имя до запроса, чтобы не тратить API на заведомо неверную команду.
@@ -332,7 +380,29 @@ def main() -> None:
             if args.checkpoint is not None:
                 history.create_checkpoint(args.checkpoint)
                 console.print(Text(f"Checkpoint сохранён: {args.checkpoint}"))
-            return
+    memory_action = args.memory_set or args.memory_delete or args.memory_clear_working or args.memory_show
+    if args.user is None and not memory_action:
+        return
+
+    history = history or HistoryManager(args.history)
+    scope = cli_memory_scope(args.history, getattr(history, "active_branch", None))
+    store = MemoryStore(args.memory_db)
+    if args.memory_set:
+        layer, key, value = args.memory_set
+        store.remember(scope, layer, key, value)
+        console.print(Text(f"Память сохранена: {layer}, {key}"))
+    elif args.memory_delete:
+        layer, key = args.memory_delete
+        store.forget(scope, layer, key)
+        console.print(Text(f"Запись памяти удалена: {layer}, {key}"))
+    elif args.memory_clear_working:
+        store.clear_working(scope)
+        console.print(Text("Рабочая память текущего диалога/ветки очищена"))
+    memory = store.snapshot(scope)
+    if args.memory_show:
+        print_memory(history, scope, memory)
+    if args.user is None:
+        return
     load_env(ENV_PATH)
 
     api_key = os.environ.get("API_KEY")
@@ -344,6 +414,7 @@ def main() -> None:
         last_messages=args.last_messages, compress_every=args.compress_every,
         on_compression=print_compression,
         strategy=args.strategy, window_size=args.window_size,
+        memory=memory,
     )
     saved_system = agent.history.get_system_prompt()
     if saved_system is not None:
@@ -398,5 +469,5 @@ def run() -> None:
     """Запустить CLI с выводом ожидаемых ошибок без traceback."""
     try:
         main()
-    except (ValueError, OSError) as error:
+    except (ValueError, OSError, MemoryStorageError) as error:
         raise SystemExit(str(error)) from error

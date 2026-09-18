@@ -32,7 +32,10 @@ class BranchTests(unittest.TestCase):
 
     def run_cli(self, *options):
         output = io.StringIO()
-        with patch("sys.argv", ["main.py", "--history", str(self.path), *options]), patch(
+        with patch("sys.argv", [
+            "main.py", "--history", str(self.path),
+            "--memory-db", str(self.path.with_suffix(".sqlite3")), *options,
+        ]), patch(
             "llm_agent.cli.console", Console(file=output, width=180, color_system=None),
         ):
             main()

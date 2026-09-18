@@ -1,15 +1,24 @@
 """Состояние одной страницы: три панели, черновики и обновление снимков."""
 
+import json
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from nicegui import ui
 
+from ..memory import MemoryStorageError
 from ..models import ContextSettings, Conversation, RequestOptions
 from ..service import ConversationBusyError, ConversationService, ConversationStorageError
 from .components import STRATEGIES, STRATEGY_HELP, empty_chat, render_turn
 from .jobs import RequestRunner
 
-UI_ERRORS = (ValueError, OSError, KeyError, ConversationBusyError, ConversationStorageError)
+UI_ERRORS = (ValueError, OSError, KeyError, ConversationBusyError, ConversationStorageError, MemoryStorageError)
+
+
+@dataclass
+class MemoryEditor:
+    key: ui.input
+    value: ui.textarea
 
 
 @dataclass
@@ -39,6 +48,11 @@ class ChatPage:
         self._turns_key: object = None
         self._banner_key: object = None
         self._near_bottom = True
+        self.memory_dialog: ui.dialog | None = None
+        self._memory_key: object = None
+        self._memory_available = False
+        self._memory_controls: list = []
+        self.memory_editors: dict[str, MemoryEditor] = {}
 
     def build(self) -> None:
         conversations = self.service.list_conversations()
@@ -76,6 +90,9 @@ class ChatPage:
                         self.title = ui.label().classes("chat-title")
                         self.subtitle = ui.label().classes("chat-subtitle")
                     ui.badge("DeepSeek", color="white", text_color="grey-8").props("outline").classes("model-badge")
+                    ui.button(icon="memory", on_click=self.open_memory).props(
+                        'flat round aria-label="Память агента"'
+                    ).tooltip("Память агента")
                     ui.button(icon="tune", on_click=lambda: self.settings_panel.classes(add="panel-open")).props(
                         'flat round aria-label="Открыть настройки диалога"'
                     ).classes("mobile-settings")
@@ -114,6 +131,8 @@ class ChatPage:
 
     def select(self, conversation_id: str) -> None:
         self.remember_draft()
+        if self.memory_dialog:
+            self.memory_dialog.close()
         self.conversation_id = conversation_id
         self.snapshot = None
         self._near_bottom = True
@@ -149,7 +168,10 @@ class ChatPage:
         with self.sidebar, ui.dialog() as dialog, ui.card().classes("delete-dialog"):
             ui.label("Удалить диалог?").classes("text-lg font-semibold")
             ui.label(conversation.title).classes("break-words")
-            ui.label("Вся переписка и настройки этого диалога будут удалены.").classes("muted")
+            ui.label(
+                "Переписка, настройки и рабочая память этого диалога будут удалены. "
+                "Долговременная память сохранится."
+            ).classes("muted")
             with ui.row().classes("w-full justify-end"):
                 ui.button("Отмена", on_click=dialog.close).props("flat no-caps")
                 ui.button("Удалить", on_click=confirm, color="negative").props("unelevated no-caps")
@@ -199,8 +221,153 @@ class ChatPage:
             if force or banner_key != self._banner_key:
                 self._banner_key = banner_key
                 self.render_banner(error)
+            self.refresh_memory()
         except UI_ERRORS:
             self.subtitle.set_text("Не удалось прочитать диалоги. Проверьте хранилище.")
+
+    def open_memory(self) -> None:
+        if self.memory_dialog and self.memory_dialog.value:
+            return
+        self._memory_key = None
+        self._memory_controls = []
+        self.memory_editors = {}
+        self._memory_conversation_id = self.snapshot.id
+        # Окно не должно исчезать при обновлении настроек или списка диалогов.
+        with self.sidebar, ui.dialog() as self.memory_dialog, ui.card().classes("memory-dialog"):
+            with ui.row().classes("w-full items-center no-wrap"):
+                ui.icon("memory", size="24px")
+                ui.label("Память агента").classes("text-lg font-semibold")
+                ui.space()
+                ui.button(icon="close", on_click=self.memory_dialog.close).props(
+                    'flat round dense aria-label="Закрыть память"'
+                )
+            ui.label(
+                "Переписка автоматически сохраняется в краткосрочной памяти. "
+                "Рабочую и долговременную память вы заполняете явно; "
+                "обычные сообщения не добавляют в них записи."
+            ).classes("memory-description")
+            self.memory_status = ui.label().classes("memory-status")
+            with ui.tabs().classes("w-full") as tabs:
+                short_tab = ui.tab("Краткосрочная", icon="chat_bubble_outline")
+                working_tab = ui.tab("Рабочая", icon="work_outline")
+                long_tab = ui.tab("Долговременная", icon="inventory_2")
+            with ui.tab_panels(tabs, value=short_tab).classes("w-full memory-panels"):
+                with ui.tab_panel(short_tab):
+                    ui.label(
+                        "Только этот диалог. Стратегия контекста определяет, какая часть "
+                        "истории попадёт в следующий запрос. Полная переписка доступна в чате."
+                    ).classes("memory-description")
+                    self.short_memory_content = ui.column().classes("w-full")
+                with ui.tab_panel(working_tab):
+                    ui.label(
+                        "Данные текущей задачи в этом диалоге: цель, ограничения, промежуточный результат. "
+                        "Все записи передаются агенту со следующим запросом."
+                    ).classes("memory-description")
+                    self.working_memory_records = ui.column().classes("memory-records")
+                    self.render_memory_editor("working")
+                    clear = ui.button(
+                        "Очистить рабочую память", icon="delete_sweep", on_click=self.clear_working_memory,
+                    ).props("flat no-caps color=negative")
+                    self._memory_controls.append(clear)
+                with ui.tab_panel(long_tab):
+                    ui.label(
+                        "Общие для всех диалогов записи. "
+                        "Сохраняются между запусками и передаются агенту со следующим запросом."
+                    ).classes("memory-description")
+                    self.long_memory_records = ui.column().classes("memory-records")
+                    self.render_memory_editor("long_term")
+        self.memory_dialog.on("hide", self.memory_dialog.delete)
+        self.memory_dialog.open()
+        self.refresh_memory()
+
+    def render_memory_editor(self, layer: str) -> None:
+        with ui.column().classes("memory-editor"):
+            ui.label("Добавить или заменить запись").classes("font-medium")
+            key = ui.input("Ключ", placeholder="Например: цель или язык").props("outlined dense").classes("w-full")
+            value = ui.textarea("Значение", placeholder="Что агенту нужно учитывать").props("outlined autogrow rows=2").classes("w-full")
+            self.memory_editors[layer] = MemoryEditor(key, value)
+            ui.label("Запись с тем же ключом в выбранном слое будет заменена.").classes("memory-description")
+            save = ui.button("Сохранить запись", icon="save", on_click=lambda: self.save_memory(layer)).props("unelevated no-caps")
+            self._memory_controls.extend((key, value, save))
+
+    def refresh_memory(self) -> None:
+        if not self.memory_dialog or not self.memory_dialog.value:
+            return
+        try:
+            memory = self.service.get_memory(self._memory_conversation_id)
+            memory_key = (self.snapshot.working_context, self.snapshot.turns, self.snapshot.settings,
+                          memory.working, memory.long_term, self.busy)
+            self._memory_available = True
+            self.memory_status.set_text("Дождитесь завершения запроса, чтобы редактировать память." if self.busy else "")
+            if memory_key != self._memory_key:
+                self._memory_key = memory_key
+                self.short_memory_content.clear()
+                with self.short_memory_content:
+                    ui.label(f"Реплик пользователя: {len(self.snapshot.turns)} · Стратегия: {STRATEGIES[self.snapshot.settings.strategy]}")
+                    with ui.expansion("Сохранённый контекст стратегии", icon="data_object").classes("w-full"):
+                        ui.label(json.dumps(self.snapshot.working_context, ensure_ascii=False, indent=2)).classes("memory-context")
+                    ui.label("Факты и сжатое содержание стратегии относятся только к этому диалогу.").classes("memory-description")
+                self.render_memory_records(self.working_memory_records, "working", memory.working)
+                self.render_memory_records(self.long_memory_records, "long_term", memory.long_term)
+        except UI_ERRORS:
+            self._memory_available = False
+            self.memory_status.set_text("Не удалось прочитать память. Проверьте хранилище; редактирование временно недоступно.")
+        for control in self._memory_controls:
+            control.set_enabled(self._memory_available and not self.busy)
+        for container in (self.working_memory_records, self.long_memory_records):
+            for control in container.descendants():
+                if isinstance(control, ui.button):
+                    control.set_enabled(self._memory_available and not self.busy)
+
+    def render_memory_records(self, container, layer: str, records: dict[str, str]) -> None:
+        container.clear()
+        with container:
+            if not records:
+                ui.label("Пока нет записей").classes("memory-description")
+            for key, value in records.items():
+                with ui.row().classes("memory-record"):
+                    with ui.column().classes("memory-record-text"):
+                        ui.label(key).classes("font-medium")
+                        ui.label(value).classes("memory-value")
+                    ui.button(
+                        icon="edit", on_click=lambda k=key, v=value: self.edit_memory(layer, k, v),
+                    ).props('flat round dense aria-label="Редактировать запись"').tooltip("Редактировать запись")
+                    ui.button(
+                        icon="delete_outline", on_click=lambda k=key: self.delete_memory(layer, k),
+                    ).props('flat round dense aria-label="Удалить запись"').tooltip("Удалить запись")
+
+    def edit_memory(self, layer: str, key: str, value: str) -> None:
+        if self.busy or not self._memory_available:
+            return
+        editor = self.memory_editors[layer]
+        editor.key.set_value(key)
+        editor.value.set_value(value)
+
+    def change_memory(self, action: Callable[[], None]) -> bool:
+        if self.busy or not self._memory_available or self._memory_conversation_id != self.conversation_id:
+            return False
+        try:
+            action()
+            self.refresh_memory()
+            ui.notify("Память обновлена", type="positive")
+            return True
+        except UI_ERRORS as error:
+            ui.notify(str(error) if isinstance(error, (ValueError, ConversationBusyError)) else "Не удалось сохранить память.", type="negative")
+            return False
+
+    def save_memory(self, layer: str) -> None:
+        editor = self.memory_editors[layer]
+        if self.change_memory(lambda: self.service.remember_memory(
+            self._memory_conversation_id, layer, editor.key.value or "", editor.value.value or "",
+        )):
+            editor.key.set_value("")
+            editor.value.set_value("")
+
+    def delete_memory(self, layer: str, key: str) -> None:
+        self.change_memory(lambda: self.service.forget_memory(self._memory_conversation_id, layer, key))
+
+    def clear_working_memory(self) -> None:
+        self.change_memory(lambda: self.service.clear_working_memory(self._memory_conversation_id))
 
     def render_list(self, conversations: list[Conversation]) -> None:
         self.conversation_list.clear()

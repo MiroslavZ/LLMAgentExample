@@ -109,6 +109,18 @@ body { color: var(--ink); background: #fff; font-family: Inter, -apple-system, B
 .system-preview .q-item__section--avatar { min-width: 28px; }
 .system-preview-text { white-space: pre-wrap; overflow-wrap: anywhere; color: #70697d; line-height: 1.8; padding: 10px 0; }
 .delete-dialog { padding: 24px; max-width: 420px; border-radius: 14px; }
+.memory-dialog { width: 760px; max-width: calc(100vw - 32px) !important; max-height: calc(100dvh - 48px); padding: 24px; border-radius: 14px; gap: 16px; }
+.memory-description { color: #7e788b; font-size: 12px; line-height: 1.7; }
+.memory-status { color: #936327; font-size: 12px; }
+.memory-status:empty { display: none; }
+.memory-panels { overflow-y: auto; }
+.memory-panels .q-tab-panel { padding: 12px 0; }
+.memory-records { width: 100%; gap: 10px; margin: 14px 0; }
+.memory-record { width: 100%; align-items: flex-start; flex-wrap: nowrap; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; }
+.memory-record-text { flex: 1; min-width: 0; gap: 5px; font-size: 13px; overflow-wrap: anywhere; }
+.memory-value, .memory-context { white-space: pre-wrap; overflow-wrap: anywhere; }
+.memory-context { width: 100%; font-size: 12px; line-height: 1.7; padding: 12px; background: var(--surface); border-radius: 8px; }
+.memory-editor { width: 100%; gap: 12px; border-top: 1px solid var(--line); padding-top: 18px; margin-top: 18px; }
 .mobile-nav, .mobile-settings, .mobile-close { display: none; }
 @media (min-height: 950px) { .empty-chat { margin-top: 100px; } }
 @media (max-width: 1190px) {

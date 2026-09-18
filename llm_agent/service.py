@@ -21,6 +21,7 @@ from .agent import Agent
 from .context_strategy import FactsStrategy, WindowStrategy
 from .history import HistoryManager, TokenUsage
 from .models import ContextSettings, Conversation, RequestOptions, Turn, utc_now
+from .memory import MemorySnapshot, MemoryStorageError, MemoryStore
 from .storage import ConversationBusyError, ConversationStorageError, ConversationStore
 
 
@@ -89,6 +90,8 @@ def _friendly_error(error: Exception) -> str:
     # Никогда не выводим str(error) из SDK: там могут быть тело ответа и секреты.
     if isinstance(error, ConversationStorageError):
         return "Не удалось подтвердить сохранение результата. Проверьте доступ к каталогу данных."
+    if isinstance(error, MemoryStorageError):
+        return "Не удалось загрузить память. Проверьте файл memory.sqlite3 и доступ к каталогу данных."
     if isinstance(error, AuthenticationError):
         return "Сервис модели отклонил API-ключ. Проверьте API_KEY на сервере."
     if isinstance(error, RateLimitError):
@@ -115,6 +118,7 @@ class ConversationService:
 
     def __init__(self, data_dir: Path, token: str | None) -> None:
         self.store = ConversationStore(data_dir)
+        self.memory = MemoryStore(self.store.data_dir / "memory.sqlite3")
         self._token = token
         self._state_lock = threading.Lock()
         self._locks: dict[str, threading.Lock] = {}
@@ -207,6 +211,33 @@ class ConversationService:
                 return deepcopy(pending)
         return self.store.load(conversation_id)
 
+    def get_memory(self, conversation_id: str) -> MemorySnapshot:
+        self.get(conversation_id)
+        return self.memory.snapshot(conversation_id)
+
+    @contextmanager
+    def _memory_operation(self, conversation_id: str) -> Iterator[None]:
+        with self._operation(conversation_id):
+            if self.get(conversation_id).busy:
+                raise ConversationBusyError("Дождитесь завершения запроса перед изменением памяти")
+            yield
+
+    def remember_memory(
+        self, conversation_id: str, layer: str, key: str, value: str,
+    ) -> None:
+        with self._memory_operation(conversation_id):
+            self.memory.remember(conversation_id, layer, key, value)
+
+    def forget_memory(
+        self, conversation_id: str, layer: str, key: str,
+    ) -> None:
+        with self._memory_operation(conversation_id):
+            self.memory.forget(conversation_id, layer, key)
+
+    def clear_working_memory(self, conversation_id: str) -> None:
+        with self._memory_operation(conversation_id):
+            self.memory.clear_working(conversation_id)
+
     @staticmethod
     def _validate_settings(settings: ContextSettings) -> None:
         if not isinstance(settings, ContextSettings):
@@ -244,7 +275,21 @@ class ConversationService:
             conversation = self.get(conversation_id)
             if conversation.busy:
                 raise ConversationBusyError("Нельзя удалить диалог, пока выполняется запрос")
-            self.store.delete(conversation_id)
+            deleted = False
+            try:
+                with self.memory.deleting_task(conversation_id):
+                    self.store.delete(conversation_id)
+                    deleted = True
+            except MemoryStorageError:
+                if deleted:
+                    # Если commit SQLite не удался, возвращаем JSON. При отказе
+                    # записи сохраняем снимок в существующем механизме _unsaved.
+                    try:
+                        self._save(conversation)
+                    except ConversationStorageError:
+                        with self._state_lock:
+                            self._unsaved[conversation_id] = deepcopy(conversation)
+                raise
             with self._state_lock:
                 self._unsaved.pop(conversation_id, None)
 
@@ -289,9 +334,13 @@ class ConversationService:
                     conversation.updated_at = utc_now()
                     self._save(conversation)
                     return deepcopy(conversation)
+                memory = self.memory.snapshot(conversation_id)
                 history = _ConversationHistory(self.store, conversation, started_at)
                 settings = conversation.settings
-                agent_options = {"history": history, "timeout": 60.0, "max_retries": 0}
+                agent_options = {
+                    "history": history, "timeout": 60.0, "max_retries": 0,
+                    "memory": memory,
+                }
                 if settings.strategy in ("window", "facts"):
                     agent_options.update(strategy=settings.strategy, window_size=settings.window_size)
                 elif settings.strategy == "summary":

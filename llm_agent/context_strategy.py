@@ -23,7 +23,7 @@ class WindowStrategy:
 
 
 class FactsStrategy(WindowStrategy):
-    """Дополняет окно постоянной памятью из строковых пар ключ-значение."""
+    """Дополняет окно локальными фактами диалога из пар ключ-значение."""
 
     @staticmethod
     def validate(facts: object) -> None:

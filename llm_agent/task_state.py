@@ -32,11 +32,44 @@ STAGE_ACTIONS = {
     TaskStage.VALIDATION: ("clarify", "revise", "finish"),
     TaskStage.DONE: (),
 }
+ACTION_DESCRIPTIONS = {
+    "clarify": "запросить уточнение",
+    "plan": "предложить план",
+    "complete_step": "завершить текущий шаг",
+    "replan": "вернуться к планированию",
+    "revise": "вернуть результат на доработку",
+    "finish": "завершить задачу",
+}
 CONTINUE_TASK = "Продолжи текущую задачу с сохранённого шага."
+
+
+class TaskResponseError(TaskStateError):
+    """Понятная пользователю причина отклонения ответа с контекстом задачи."""
+
+    def __init__(self, task: "TaskState", reason: str) -> None:
+        context = f"Текущий этап: {task.stage.value}."
+        if task.stage == TaskStage.EXECUTION:
+            context += f" Текущий шаг: {task.step + 1} из {len(task.plan)}."
+        super().__init__(
+            f"Ответ модели отклонён: {reason} {context} "
+            "Этап и шаг сохранены. Повторите запрос."
+        )
 
 
 def _text(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+def _quoted_name(value: str) -> str:
+    """Показывать названия полей/действий кратко, экранируя управляющие символы."""
+    return json.dumps(value[:80] + ("…" if len(value) > 80 else ""), ensure_ascii=False)
+
+
+def _json_type(value: object) -> str:
+    return {
+        str: "строка", list: "массив", dict: "объект", type(None): "null",
+        bool: "логическое значение", int: "число", float: "число",
+    }.get(type(value), "значение другого типа")
 
 
 @dataclass(frozen=True)
@@ -132,29 +165,79 @@ class TaskState:
             raise TaskStateError(f"Переход {self.stage.value} → {target.value} запрещён")
         return replace(self, stage=target, **changes)
 
+    def _parse_reply(self, content: str) -> dict:
+        """Проверить протокол, сохранив конкретную причину каждого отказа."""
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as error:
+            raise TaskResponseError(self, (
+                f"Некорректный JSON в строке {error.lineno}, столбце {error.colno}. "
+                "Ожидается JSON-объект с полями answer и action."
+            )) from error
+        except (ValueError, TypeError) as error:
+            raise TaskResponseError(self, "Ответ должен содержать JSON-объект с полями answer и action.") from error
+        if not isinstance(data, dict):
+            raise TaskResponseError(self, (
+                f"Ожидался JSON-объект с полями answer и action; получено: {_json_type(data)}."
+            ))
+        missing = {"answer", "action"} - set(data)
+        if missing:
+            raise TaskResponseError(self, "Отсутствуют обязательные поля: " + ", ".join(sorted(missing)) + ".")
+        extra = set(data) - {"answer", "action", "plan"}
+        if extra:
+            names = ", ".join(_quoted_name(key) for key in sorted(extra)[:5])
+            if len(extra) > 5:
+                names += f" и ещё {len(extra) - 5}"
+            raise TaskResponseError(self, (
+                f"Лишние поля: {names}. Допустимы только answer, action и plan "
+                "(plan — только для действия plan). Этап и номер шага определяет приложение."
+            ))
+        for key in ("answer", "action"):
+            if not isinstance(data[key], str):
+                raise TaskResponseError(self, (
+                    f"Поле {key} должно быть непустой строкой; получено: {_json_type(data[key])}."
+                ))
+            if not data[key].strip():
+                raise TaskResponseError(self, f"Поле {key} содержит пустую строку; ожидается непустая строка.")
+        if data["action"] not in STAGE_ACTIONS[self.stage]:
+            action = data["action"]
+            allowed = ", ".join(
+                f"{name} ({ACTION_DESCRIPTIONS[name]})" for name in STAGE_ACTIONS[self.stage]
+            )
+            reason = (
+                f"Действие {_quoted_name(action)} ({ACTION_DESCRIPTIONS[action]}) недопустимо на этом этапе."
+                if action in ACTION_DESCRIPTIONS else f"Неизвестное действие {_quoted_name(action)}."
+            )
+            raise TaskResponseError(self, f"{reason} Допустимые действия: {allowed}.")
+        action = data["action"]
+        if action == "plan":
+            if "plan" not in data:
+                raise TaskResponseError(self, "Для действия plan отсутствует поле plan со списком пунктов.")
+            if not isinstance(data["plan"], list):
+                raise TaskResponseError(self, (
+                    f"Поле plan должно быть массивом непустых строк; получено: {_json_type(data['plan'])}."
+                ))
+            if not data["plan"]:
+                raise TaskResponseError(self, "План пуст: поле plan должно содержать хотя бы один пункт.")
+            for index, item in enumerate(data["plan"], start=1):
+                if not isinstance(item, str):
+                    raise TaskResponseError(self, (
+                        f"Пункт плана №{index} должен быть непустой строкой; получено: {_json_type(item)}."
+                    ))
+                if not item.strip():
+                    raise TaskResponseError(self, f"Пункт плана №{index} пуст; каждый пункт должен описывать шаг.")
+        elif "plan" in data:
+            raise TaskResponseError(self, (
+                f"Поле plan передано вместе с действием {_quoted_name(action)}. "
+                "Оно допустимо только для действия plan на этапе planning."
+            ))
+        return data
+
     def apply_reply(self, user: str, content: str) -> tuple[str, "TaskState"]:
         """Проверить весь ответ до изменения истории; вернуть ответ и новый снимок."""
         self.require_active()
-        try:
-            data = json.loads(content)
-        except (ValueError, TypeError) as error:
-            raise TaskStateError("Модель вернула некорректный JSON задачи; шаг сохранён") from error
-        if (
-            not isinstance(data, dict) or not {"answer", "action"} <= set(data)
-            or set(data) - {"answer", "action", "plan"}
-            or not _text(data["answer"])
-            or data["action"] not in STAGE_ACTIONS[self.stage]
-        ):
-            raise TaskStateError("Модель вернула недопустимое действие задачи; шаг сохранён")
+        data = self._parse_reply(content)
         action, answer = data["action"], data["answer"].strip()
-        if action == "plan":
-            if not isinstance(data.get("plan"), list) or not data["plan"] or any(
-                not _text(item) for item in data["plan"]
-            ):
-                raise TaskStateError("Для выполнения задачи нужен непустой план")
-        elif "plan" in data:
-            raise TaskStateError("Изменять план можно только на этапе planning")
-
         notes = self.notes
         if user.strip() and user.strip() != CONTINUE_TASK:
             notes += ("Пользователь: " + user.strip(),)

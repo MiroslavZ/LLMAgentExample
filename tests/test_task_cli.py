@@ -194,11 +194,13 @@ class TaskCliTests(unittest.TestCase):
         self.run_cli("--strategy", "branch", "--task-start", "Доклад")
         before = BranchHistoryManager(self.history).task_state
         self.reply("finish", "Слишком раннее завершение")
-        with patch.dict("os.environ", {"API_KEY": "test"}), self.assertRaises(SystemExit):
+        with patch.dict("os.environ", {"API_KEY": "test"}), self.assertRaises(SystemExit) as raised:
             self.run_cli(
                 "--strategy", "branch", "--task-continue", "--checkpoint", "invalid",
                 entrypoint=run,
             )
+        self.assertIn('Действие "finish" (завершить задачу) недопустимо', str(raised.exception))
+        self.assertIn("Текущий этап: planning", str(raised.exception))
         restored = BranchHistoryManager(self.history)
         self.assertEqual(restored.task_state, before)
         self.assertEqual(restored.get_messages(), [])

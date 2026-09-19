@@ -12,7 +12,7 @@ from llm_agent.memory import MemorySnapshot
 from llm_agent.models import RequestOptions, Turn
 from llm_agent.profile import UserProfile
 from llm_agent.service import ConversationBusyError, ConversationService, ConversationStorageError
-from llm_agent.task_state import CONTINUE_TASK, TaskStage, TaskState, TaskStateError
+from llm_agent.task_state import CONTINUE_TASK, TaskResponseError, TaskStage, TaskState, TaskStateError
 from tests.helpers import completion
 
 
@@ -95,6 +95,55 @@ class TaskStateTests(unittest.TestCase):
         ):
             with self.subTest(change=change), self.assertRaises(TaskStateError):
                 TaskState.from_dict({**TaskState("Задача").to_dict(), **change})
+
+    def test_reply_errors_explain_the_exact_format_or_plan_problem(self):
+        state = TaskState("Задача")
+        cases = (
+            ('{"answer":', "Некорректный JSON в строке 1, столбце 11"),
+            ("[]", "получено: массив"),
+            ("null", "получено: null"),
+            ('{"answer":"Ответ"}', "Отсутствуют обязательные поля: action"),
+            (payload("clarify", step=3), 'Лишние поля: "step"'),
+            (payload("clarify", answer={}), "Поле answer должно быть непустой строкой; получено: объект"),
+            (payload("clarify", answer=" "), "Поле answer содержит пустую строку"),
+            (payload(["finish"]), "Поле action должно быть непустой строкой; получено: массив"),
+            (payload(" "), "Поле action содержит пустую строку"),
+            (payload("execute"), 'Неизвестное действие "execute"'),
+            (payload("plan"), "Для действия plan отсутствует поле plan"),
+            (payload("plan", plan=[]), "План пуст"),
+            (payload("plan", plan="Первый шаг"), "Поле plan должно быть массивом непустых строк; получено: строка"),
+            (payload("plan", plan=["Первый шаг", " "]), "Пункт плана №2 пуст"),
+            (payload("plan", plan=["Первый шаг", 7]), "Пункт плана №2 должен быть непустой строкой; получено: число"),
+            (payload("clarify", plan=[]), 'Поле plan передано вместе с действием "clarify"'),
+        )
+        for content, expected in cases:
+            with self.subTest(content=content), self.assertRaises(TaskResponseError) as raised:
+                state.apply_reply(CONTINUE_TASK, content)
+            message = str(raised.exception)
+            self.assertIn(expected, message)
+            self.assertIn("Текущий этап: planning", message)
+            self.assertIn("Этап и шаг сохранены", message)
+            self.assertNotIn("Повторите описание задачи", message)
+
+    def test_forbidden_action_shows_stage_step_and_allowed_actions(self):
+        state = stages()[2]
+        with self.assertRaises(TaskResponseError) as raised:
+            state.apply_reply(CONTINUE_TASK, payload("finish"))
+        message = str(raised.exception)
+        for expected in (
+            'Действие "finish" (завершить задачу) недопустимо', "Текущий этап: execution",
+            "Текущий шаг: 2 из 2", "clarify (запросить уточнение)",
+            "complete_step (завершить текущий шаг)", "replan (вернуться к планированию)",
+        ):
+            self.assertIn(expected, message)
+        self.assertEqual(state, stages()[2])
+
+    def test_untrusted_names_in_errors_are_bounded_and_do_not_include_answer(self):
+        for fields in ({"action": "x" * 1000 + "\n"}, {"action": "clarify", "y" * 1000: 1}):
+            with self.subTest(fields=tuple(fields)), self.assertRaises(TaskResponseError) as raised:
+                TaskState("Задача").apply_reply(CONTINUE_TASK, json.dumps({"answer": "Содержимое ответа", **fields}))
+            self.assertLess(len(str(raised.exception)), 700)
+            self.assertNotIn("Содержимое ответа", str(raised.exception))
 
 
 class TaskIntegrationTests(unittest.TestCase):
@@ -240,6 +289,51 @@ class TaskServiceTests(unittest.TestCase):
         self.service = ConversationService(self.directory, "test")
         self.conversation = self.service.create()
         self.create = self.enterContext(patch("llm_agent.agent.OpenAI")).return_value.chat.completions.create
+
+    def test_specific_rejection_is_saved_and_can_be_retried_without_losing_progress(self):
+        cid = self.conversation.id
+        initial = self.service.start_task(cid, "Задача")
+        for response, reason in (
+            (reply("finish"), 'Действие "finish" (завершить задачу) недопустимо'),
+            (reply("plan", plan=[]), "План пуст"),
+            (reply("plan", plan=["Шаг", None]), "Пункт плана №2"),
+        ):
+            with self.subTest(reason=reason):
+                self.create.return_value = response
+                failed = self.service.send(cid, CONTINUE_TASK)
+                self.assertEqual(failed.task_state, initial.task_state)
+                self.assertEqual(failed.turns[-1].status, "error")
+                self.assertIsNone(failed.turns[-1].answer)
+                self.assertIn(reason, failed.turns[-1].error)
+                restored = ConversationService(self.directory, "test").get(cid)
+                self.assertEqual(restored.turns[-1].error, failed.turns[-1].error)
+        self.create.return_value = reply("plan", plan=["Первый шаг"])
+        completed = self.service.send(cid, CONTINUE_TASK)
+        self.assertEqual(completed.task_state.stage, TaskStage.EXECUTION)
+        self.assertEqual(completed.task_state.step, 0)
+        self.assertEqual(completed.turns[-1].status, "completed")
+
+    def test_incomplete_reply_explains_finish_reason_without_assuming_user_limit(self):
+        cid = self.conversation.id
+        initial = self.service.start_task(cid, "Задача")
+        for finish_reason, expected in (
+            ("length", "Лимит может действовать и без настройки в интерфейсе"),
+            ("content_filter", "фильтром содержимого"),
+            ("tool_calls", "вызов инструмента"),
+            ("function_call", "вызов функции"),
+            (None, "причина остановки отсутствует или неизвестна"),
+        ):
+            with self.subTest(finish_reason=finish_reason):
+                response = reply("plan", plan=["Шаг"])
+                response.choices[0].finish_reason = finish_reason
+                self.create.return_value = response
+                failed = self.service.send(cid, CONTINUE_TASK)
+                self.assertIsNone(failed.turns[-1].options.max_tokens)
+                self.assertIn(expected, failed.turns[-1].error)
+                if finish_reason:
+                    self.assertIn("finish_reason=" + finish_reason, failed.turns[-1].error)
+                self.assertIn("Текущий этап: planning", failed.turns[-1].error)
+                self.assertEqual(failed.task_state, initial.task_state)
 
     def test_lifecycle_pause_reload_resume_at_every_stage(self):
         cid = self.conversation.id

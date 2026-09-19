@@ -13,7 +13,7 @@ from .history import DEFAULT_HISTORY_PATH, DialogueUsage, HistoryManager, Messag
 from .context_strategy import SUPPORTED_STRATEGIES, FactsStrategy, WindowStrategy
 from .memory import MemorySnapshot
 from .profile import UserProfile
-from .task_state import TaskStage, TaskStateError
+from .task_state import TaskResponseError, TaskStage, TaskStateError
 
 BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
@@ -289,7 +289,17 @@ class Agent:
         if active_task:
             try:
                 if choice.finish_reason != "stop":
-                    raise TaskStateError("Ответ задачи не завершён; текущий шаг сохранён. Повторите запрос.")
+                    reason = {
+                        "length": (
+                            "Сервис модели остановил генерацию по лимиту длины ответа "
+                            "(finish_reason=length). Лимит может действовать и без настройки "
+                            "в интерфейсе. Попробуйте запросить более короткий результат."
+                        ),
+                        "content_filter": "Сервис модели остановил ответ фильтром содержимого (finish_reason=content_filter).",
+                        "tool_calls": "Модель запросила вызов инструмента вместо ответа задачи (finish_reason=tool_calls).",
+                        "function_call": "Модель запросила вызов функции вместо ответа задачи (finish_reason=function_call).",
+                    }.get(choice.finish_reason, "Сервис модели не подтвердил завершение ответа: причина остановки отсутствует или неизвестна.")
+                    raise TaskResponseError(task, reason)
                 answer, updated_task = task.apply_reply(user, answer)
             except TaskStateError:
                 self.history.record_response_usage(tokens)

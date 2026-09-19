@@ -15,6 +15,7 @@ from llm_agent.service import ConversationService, ConversationStorageError
 from llm_agent.task_state import CONTINUE_TASK, TaskStage, TaskState
 from llm_agent.web.jobs import RequestRunner
 from llm_agent.web.page import ChatPage
+from tests.helpers import completion
 
 
 class TaskPageTests(unittest.IsolatedAsyncioTestCase):
@@ -269,6 +270,25 @@ class TaskPageTests(unittest.IsolatedAsyncioTestCase):
             panel.resume()
         self.assertFalse(page.send_button.enabled)
         self.assertFalse(page.snapshot.task_state.paused)
+
+    async def test_chat_displays_specific_model_rejection_after_reload(self):
+        self.service.start_task(self.conversation.id, "Задача")
+        response = completion()
+        response.choices[0].message.content = '{"answer":"Готово","action":"finish"}'
+        with patch("llm_agent.agent.OpenAI") as client:
+            client.return_value.chat.completions.create.return_value = response
+            self.service.send(self.conversation.id, CONTINUE_TASK)
+        self.service = ConversationService(self.directory, "test-token")
+        self.runner = RequestRunner(self.service)
+        with self.client:
+            page = self.build_page()
+        labels = self.labels(page.transcript)
+        error = next(text for text in labels if "Ответ модели отклонён" in text)
+        self.assertIn('Действие "finish" (завершить задачу) недопустимо', error)
+        self.assertIn("Текущий этап: planning", error)
+        self.assertIn("Допустимые действия", error)
+        self.assertIn("Этап и шаг сохранены", error)
+        self.assertEqual(page.snapshot.task_state.stage, TaskStage.PLANNING)
 
 
 if __name__ == "__main__":

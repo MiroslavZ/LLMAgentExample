@@ -100,7 +100,9 @@ def _friendly_error(error: Exception) -> str:
     if isinstance(error, ProfileStorageError):
         return "Не удалось загрузить профиль. Проверьте файл profiles.sqlite3 и доступ к каталогу данных."
     if isinstance(error, TaskStateError):
-        return "Модель вернула некорректный или незавершённый ответ задачи. Этап и шаг сохранены; повторите запрос."
+        # Собственные сообщения валидатора содержат конкретную причину и
+        # контекст задачи, без тела ответа или текста исключений SDK.
+        return str(error)
     if isinstance(error, AuthenticationError):
         return "Сервис модели отклонил API-ключ. Проверьте API_KEY на сервере."
     if isinstance(error, RateLimitError):

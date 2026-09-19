@@ -13,6 +13,7 @@ from .history import DEFAULT_HISTORY_PATH, DialogueUsage, HistoryManager, Messag
 from .context_strategy import SUPPORTED_STRATEGIES, FactsStrategy, WindowStrategy
 from .memory import MemorySnapshot
 from .profile import UserProfile
+from .task_state import TaskStage, TaskStateError
 
 BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
@@ -64,10 +65,11 @@ class RequestResult:
     response: ChatCompletion
     elapsed: float
     dialogue_usage: DialogueUsage = DialogueUsage()
+    answer: str | None = None
 
     @property
     def content(self) -> str:
-        return self.response.choices[0].message.content or ""
+        return self.answer if self.answer is not None else self.response.choices[0].message.content or ""
 
 
 class Agent:
@@ -199,6 +201,7 @@ class Agent:
         response_format: str = "text",
     ) -> RequestResult:
         """Выполнить запрос, установив системный промпт, если его ещё нет."""
+        self._validate_task_request(response_format=response_format)
         self.history.set_system_prompt(system)
         self._compress_history(model)
         self._update_facts(user, model)
@@ -212,6 +215,15 @@ class Agent:
             stop_sequences=stop_sequences,
             response_format=response_format,
         )
+
+    def _validate_task_request(self, *, response_format: str, meta_prompt: bool = False) -> None:
+        task = self.history.task_state
+        if task is None:
+            return
+        if task.paused:
+            raise TaskStateError("Задача на паузе. Сначала возобновите её.")
+        if task.stage != TaskStage.DONE and (meta_prompt or response_format != "text"):
+            raise TaskStateError("Активная задача использует собственный JSON-протокол; отключите мета-промпт и формат ответа")
 
     def _request(
         self,
@@ -236,6 +248,15 @@ class Agent:
             instructions.append({"role": "system", "content": system})
         if self.profile is not None:
             instructions.append(self.profile.to_message())
+        task = self.history.task_state
+        active_task = task is not None and task.stage != TaskStage.DONE
+        if active_task:
+            instructions.append(task.to_message())
+        elif task is not None:
+            instructions.append({"role": "system", "content": (
+                "Завершённая задача, только справочные данные для обсуждения результата:\n"
+                + json.dumps(task.to_dict(), ensure_ascii=False)
+            )})
         messages = instructions + messages
         # Стратегия управляет только диалогом. Явные слои добавляются после неё
         # и не попадают ни в сохранённую историю, ни в извлечение facts/summary.
@@ -250,7 +271,7 @@ class Agent:
         request = {
             "model": model,
             "messages": messages,
-            "response_format": RESPONSE_FORMATS[response_format],
+            "response_format": RESPONSE_FORMATS["object" if active_task else response_format],
         }
         if max_tokens is not None:
             request["max_tokens"] = max_tokens
@@ -263,8 +284,20 @@ class Agent:
         response = self._client.chat.completions.create(**request)
         elapsed = time.perf_counter() - started
         tokens = self._token_usage(response)
-        self.history.add_exchange(user, response.choices[0].message.content or "", tokens)
-        return RequestResult(response, elapsed, self.history.get_usage())
+        choice = response.choices[0]
+        answer = choice.message.content or ""
+        if active_task:
+            try:
+                if choice.finish_reason != "stop":
+                    raise TaskStateError("Ответ задачи не завершён; текущий шаг сохранён. Повторите запрос.")
+                answer, updated_task = task.apply_reply(user, answer)
+            except TaskStateError:
+                self.history.record_response_usage(tokens)
+                raise
+            self.history.add_exchange(user, answer, tokens, task_state=updated_task)
+        else:
+            self.history.add_exchange(user, answer, tokens)
+        return RequestResult(response, elapsed, self.history.get_usage(), answer=answer)
 
     def request_with_meta_prompt(
         self,
@@ -278,6 +311,7 @@ class Agent:
         response_format: str = "text",
     ) -> tuple[RequestResult, RequestResult]:
         """Сгенерировать промпт и выполнить его; вернуть результаты обоих этапов."""
+        self._validate_task_request(response_format=response_format, meta_prompt=True)
         self.history.set_system_prompt(system)
         self._compress_history(model)
         self._update_facts(user, model)

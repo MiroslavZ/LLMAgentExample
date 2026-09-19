@@ -114,3 +114,4 @@ class BranchHistoryManager(HistoryManager):
         self._checkpoints = checkpoints
         self._active_branch = active_branch
         self._messages, self._summary, self._facts, self._archived_usage = state
+        self._task_state = self.task_from_data(branches[active_branch])

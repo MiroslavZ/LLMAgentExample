@@ -7,8 +7,10 @@ from pathlib import Path
 from typing import Literal, TypedDict
 
 from .context_strategy import FactsStrategy, WindowStrategy
+from .task_state import TaskStage, TaskState, TaskStateError
 
 DEFAULT_HISTORY_PATH = Path("history.json")
+_UNCHANGED = object()
 
 
 class Message(TypedDict):
@@ -71,11 +73,13 @@ class HistoryManager:
         if isinstance(data, dict):
             if "branches" in data:
                 raise ValueError("История содержит ветки; используйте --strategy branch или другой --history")
-            if set(data) not in (
+            if set(data) - {"task_state"} not in (
                 {"messages", "summary", "archived_usage"},
                 {"messages", "summary", "facts", "archived_usage"},
             ):
                 raise ValueError("Некорректный формат сжатой истории")
+            if "task_state" in data:
+                TaskState.from_dict(data["task_state"])
             if "facts" in data:
                 FactsStrategy.validate(data["facts"])
                 facts = data["facts"]
@@ -95,6 +99,30 @@ class HistoryManager:
 
     def _restore_data(self, data: object) -> None:
         self._messages, self._summary, self._facts, self._archived_usage = self._decode_data(deepcopy(data))
+        self._task_state = self.task_from_data(data)
+
+    @staticmethod
+    def task_from_data(data: object) -> TaskState | None:
+        return TaskState.from_dict(data["task_state"]) if isinstance(data, dict) and "task_state" in data else None
+
+    @property
+    def task_state(self) -> TaskState | None:
+        return self._task_state
+
+    def start_task(self, title: str) -> None:
+        if self.task_state is not None and self.task_state.stage != TaskStage.DONE:
+            raise TaskStateError("Сначала завершите текущую задачу")
+        self._save(self._messages, facts=self._facts, task_state=TaskState(title=title))
+
+    def pause_task(self) -> None:
+        if self.task_state is None:
+            raise TaskStateError("Сначала создайте задачу")
+        self._save(self._messages, facts=self._facts, task_state=self.task_state.pause())
+
+    def resume_task(self) -> None:
+        if self.task_state is None:
+            raise TaskStateError("Сначала создайте задачу")
+        self._save(self._messages, facts=self._facts, task_state=self.task_state.resume())
 
     @staticmethod
     def _validate(messages: object) -> None:
@@ -153,6 +181,13 @@ class HistoryManager:
     def update_facts(self, facts: dict[str, str], usage: TokenUsage | None) -> None:
         """Атомарно сохранить память и расход её обновления перед основным запросом."""
         FactsStrategy.validate(facts)
+        self._save(self._messages, facts=facts, archived_usage=self._usage_with_response(usage))
+
+    def record_response_usage(self, usage: TokenUsage | None) -> None:
+        """Учесть отклонённый ответ API, сохранив сообщения и прогресс задачи."""
+        self._save(self._messages, facts=self._facts, archived_usage=self._usage_with_response(usage))
+
+    def _usage_with_response(self, usage: TokenUsage | None) -> DialogueUsage:
         totals = asdict(self._archived_usage)
         if usage is None:
             totals["missing_responses"] += 1
@@ -160,7 +195,7 @@ class HistoryManager:
             self._validate([{"role": "assistant", "content": "", "usage": asdict(usage)}])
             for key, value in asdict(usage).items():
                 totals[key] += value
-        self._save(self._messages, facts=facts, archived_usage=DialogueUsage(**totals))
+        return DialogueUsage(**totals)
 
     def get_messages(self, *, include_system: bool = True) -> list[Message]:
         """Вернуть копию истории, защищённую от изменений вызывающим кодом."""
@@ -234,12 +269,17 @@ class HistoryManager:
                 totals[key] += message["usage"][key]
         return DialogueUsage(**totals, missing_responses=missing)
 
-    def add_exchange(self, user: str, assistant: str, usage: TokenUsage | None) -> None:
+    def add_exchange(
+        self, user: str, assistant: str, usage: TokenUsage | None, *,
+        task_state: TaskState | None = None,
+    ) -> None:
         """Атомарно сохранить запрос, ответ и его расход токенов."""
         reply: StoredMessage = {"role": "assistant", "content": assistant}
         if usage is not None:
             reply["usage"] = asdict(usage)
-        self.add_messages([{"role": "user", "content": user}, reply])
+        messages = self._messages + [{"role": "user", "content": user}, reply]
+        self._validate(messages)
+        self._save(messages, facts=self._facts, task_state=task_state if task_state is not None else _UNCHANGED)
 
     def add_message(self, role: Literal["user", "assistant"], content: str) -> None:
         self.add_messages([{"role": role, "content": content}])
@@ -253,13 +293,17 @@ class HistoryManager:
 
     def clear(self) -> None:
         """Очистить историю в памяти и на диске."""
-        self._save([], summary="", facts=None, archived_usage=DialogueUsage())
+        self._save([], summary="", facts=None, archived_usage=DialogueUsage(), task_state=None)
 
     def _save(
         self, messages: list[StoredMessage], *, facts: dict[str, str] | None,
         summary: str | None = None,
         archived_usage: DialogueUsage | None = None,
+        task_state: TaskState | None | object = _UNCHANGED,
     ) -> None:
+        task_state = self._task_state if task_state is _UNCHANGED else task_state
+        if task_state is not None and not isinstance(task_state, TaskState):
+            raise TaskStateError("Некорректное состояние задачи")
         summary = self._summary if summary is None else summary
         facts = facts.copy() if facts is not None else None
         archived_usage = self._archived_usage if archived_usage is None else archived_usage
@@ -281,15 +325,18 @@ class HistoryManager:
                 facts = None
             archived_usage = DialogueUsage(**totals)
         data = messages
-        if summary or facts is not None or archived_usage != DialogueUsage():
+        if summary or facts is not None or archived_usage != DialogueUsage() or task_state is not None:
             data = {"messages": messages, "summary": summary, "archived_usage": asdict(archived_usage)}
             if facts is not None:
                 data["facts"] = facts
+            if task_state is not None:
+                data["task_state"] = task_state.to_dict()
         self._write_data(data)
         self._messages = messages
         self._summary = summary
         self._facts = facts
         self._archived_usage = archived_usage
+        self._task_state = task_state
 
     def _write_data(self, data: object) -> None:
         """Атомарно заменить файл; состояние памяти обновляет вызывающий код."""

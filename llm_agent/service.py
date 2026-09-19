@@ -24,6 +24,7 @@ from .models import ContextSettings, Conversation, RequestOptions, Turn, utc_now
 from .memory import MemorySnapshot, MemoryStorageError, MemoryStore
 from .profile import ProfileStorageError, ProfileStore, UserProfile
 from .storage import ConversationBusyError, ConversationStorageError, ConversationStore
+from .task_state import TaskStage, TaskState, TaskStateError
 
 
 class _ConversationHistory(HistoryManager):
@@ -57,7 +58,10 @@ class _ConversationHistory(HistoryManager):
         self.conversation = snapshot
         self.pending_snapshot = None
 
-    def add_exchange(self, user: str, assistant: str, usage: TokenUsage | None) -> None:
+    def add_exchange(
+        self, user: str, assistant: str, usage: TokenUsage | None, *,
+        task_state: TaskState | None = None,
+    ) -> None:
         turn = self.conversation.turns[-1]
         is_meta_stage = turn.options.meta_prompt and turn.meta_prompt is None
         self._turn_updates = (
@@ -68,7 +72,7 @@ class _ConversationHistory(HistoryManager):
             }
         )
         try:
-            super().add_exchange(user, assistant, usage)
+            super().add_exchange(user, assistant, usage, task_state=task_state)
         finally:
             self._turn_updates = {}
 
@@ -95,6 +99,8 @@ def _friendly_error(error: Exception) -> str:
         return "Не удалось загрузить память. Проверьте файл memory.sqlite3 и доступ к каталогу данных."
     if isinstance(error, ProfileStorageError):
         return "Не удалось загрузить профиль. Проверьте файл profiles.sqlite3 и доступ к каталогу данных."
+    if isinstance(error, TaskStateError):
+        return "Модель вернула некорректный или незавершённый ответ задачи. Этап и шаг сохранены; повторите запрос."
     if isinstance(error, AuthenticationError):
         return "Сервис модели отклонил API-ключ. Проверьте API_KEY на сервере."
     if isinstance(error, RateLimitError):
@@ -218,6 +224,31 @@ class ConversationService:
     def get_memory(self, conversation_id: str) -> MemorySnapshot:
         self.get(conversation_id)
         return self.memory.snapshot(conversation_id)
+
+    def _task_operation(self, conversation_id: str, action: str, title: str | None = None) -> Conversation:
+        with self._operation(conversation_id):
+            conversation = self.get(conversation_id)
+            if conversation.busy:
+                raise ConversationBusyError("Дождитесь завершения запроса перед изменением задачи")
+            history = _ConversationHistory(self.store, conversation, time.perf_counter())
+            if action == "start":
+                history.start_task(title)
+            elif action == "pause":
+                history.pause_task()
+            elif action == "resume":
+                history.resume_task()
+            with self._state_lock:
+                self._unsaved.pop(conversation_id, None)
+            return deepcopy(history.conversation)
+
+    def start_task(self, conversation_id: str, title: str) -> Conversation:
+        return self._task_operation(conversation_id, "start", title)
+
+    def pause_task(self, conversation_id: str) -> Conversation:
+        return self._task_operation(conversation_id, "pause")
+
+    def resume_task(self, conversation_id: str) -> Conversation:
+        return self._task_operation(conversation_id, "resume")
 
     def get_profile(self, conversation_id: str) -> UserProfile | None:
         self.get(conversation_id)
@@ -347,6 +378,12 @@ class ConversationService:
             conversation = self.get(conversation_id)
             if conversation.busy:
                 raise ConversationBusyError("В этом диалоге уже выполняется запрос")
+            task = conversation.task_state
+            if task is not None:
+                if task.paused:
+                    raise TaskStateError("Задача на паузе. Сначала возобновите её.")
+                if task.stage != TaskStage.DONE and options.meta_prompt:
+                    raise TaskStateError("Отключите мета-промпт для работы с активной задачей")
             if settings is not None:
                 self._apply_settings(conversation, settings, expected_settings)
             if conversation.started and system_prompt and system_prompt != conversation.system_prompt:

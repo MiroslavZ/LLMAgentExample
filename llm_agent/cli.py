@@ -22,6 +22,7 @@ from .memory import (
     MemorySnapshot, MemoryStorageError, MemoryStore, cli_memory_scope,
 )
 from .profile import ProfileStorageError, ProfileStore, UserProfile
+from .task_state import CONTINUE_TASK
 
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
@@ -63,7 +64,28 @@ def parse_args() -> argparse.Namespace:
         help=f"Имя модели (по умолчанию: {DEFAULT_MODEL})",
     )
     parser.add_argument("--system", help="Системный промпт диалога (сохраняется, если ещё не задан)")
-    parser.add_argument("--user", help="Текст запроса; необязателен для управления ветками, памятью и профилями")
+    parser.add_argument("--user", help="Текст запроса; необязателен для управления ветками, памятью, профилями и задачей")
+    task_action = parser.add_mutually_exclusive_group()
+    task_action.add_argument(
+        "--task-start", metavar="TITLE",
+        help="Создать задачу на этапе planning; добавьте --user для первого шага через API",
+    )
+    task_action.add_argument(
+        "--task-show", action="store_true",
+        help="Показать сохранённое состояние задачи в JSON без обращения к API",
+    )
+    task_action.add_argument(
+        "--task-pause", action="store_true",
+        help="Приостановить задачу, сохранив её этап и текущий шаг, без обращения к API",
+    )
+    task_action.add_argument(
+        "--task-resume", action="store_true",
+        help="Снять паузу задачи без обращения к API; добавьте --user для следующего шага",
+    )
+    task_action.add_argument(
+        "--task-continue", action="store_true",
+        help="Выполнить следующий шаг сохранённой задачи через API без повторного описания",
+    )
     parser.add_argument(
         "--max-tokens",
         type=positive_int,
@@ -195,6 +217,18 @@ def parse_args() -> argparse.Namespace:
         help="Показать выбранный профиль текущего диалога/ветки (null, если профиль отключён)",
     )
     args = parser.parse_args()
+    task_options = (
+        args.task_start is not None, args.task_show, args.task_pause,
+        args.task_resume, args.task_continue,
+    )
+    if args.task_start is not None and not args.task_start.strip():
+        parser.error("Название задачи должно быть непустой строкой")
+    if args.user is not None and (args.task_show or args.task_pause or args.task_continue):
+        parser.error("--task-show, --task-pause и --task-continue не совмещаются с --user")
+    if args.task_show and (args.memory_show or args.profile_show or args.profile_list or args.list_branches):
+        parser.error("--task-show нельзя совмещать с другими командами просмотра")
+    if args.task_continue:
+        args.user = CONTINUE_TASK
     if args.profiles_db is None:
         args.profiles_db = args.memory_db.with_name("profiles.sqlite3")
     profile_options = (
@@ -224,10 +258,10 @@ def parse_args() -> argparse.Namespace:
     if args.list_branches and args.user is not None:
         parser.error("--list-branches не совмещается с --user")
     if args.user is None:
-        if not any(branch_options) and not any(profile_options) and not (
+        if not any(branch_options) and not any(profile_options) and not any(task_options) and not (
             memory_edit or args.memory_show or args.memory_clear_working
         ):
-            parser.error("Укажите --user или операцию управления ветками, памятью или профилями")
+            parser.error("Укажите --user или операцию управления ветками, памятью, профилями или задачей")
         if args.meta_prompt or args.system is not None:
             parser.error("--meta-prompt и --system требуют --user")
     if args.strategy in ("window", "facts") and args.window_size is None:
@@ -236,7 +270,7 @@ def parse_args() -> argparse.Namespace:
         parser.error("--window-size требует --strategy window или facts")
     if args.strategy is not None and (args.last_messages is not None or args.compress_every is not None):
         parser.error("--strategy нельзя совмещать с --last-messages или --compress-every")
-    if (args.last_messages is None) != (args.compress_every is None):
+    if not args.task_show and (args.last_messages is None) != (args.compress_every is None):
         console.print(
             "[yellow]Предупреждение: для работы сжатия истории необходимо указать оба аргумента: "
             "--last-messages и --compress-every. Агент продолжит работу без сжатия.[/yellow]"
@@ -408,6 +442,46 @@ def print_memory(history: HistoryManager, scope: str, snapshot: MemorySnapshot) 
     console.print(Syntax(json.dumps(data, ensure_ascii=False, indent=2), "json", word_wrap=True))
 
 
+def print_task_state(history: HistoryManager, *, json_only: bool = False) -> None:
+    state = history.task_state
+    if json_only:
+        data = state.to_dict() if state is not None else None
+        console.print(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            markup=False, highlight=False, soft_wrap=True,
+        )
+    elif state is not None:
+        details = Table.grid(padding=(0, 2))
+        details.add_column(style="bold dim")
+        details.add_column()
+        details.add_row("Задача", Text(state.title))
+        details.add_row("Этап", state.stage.value + (" · пауза" if state.paused else ""))
+        details.add_row("Текущий шаг", Text(state.current_step))
+        details.add_row("Ожидаемое действие", Text(state.expected_action))
+        console.print(Panel(details, title="Состояние задачи", border_style="cyan"))
+
+
+def apply_task_options(args: argparse.Namespace, history: HistoryManager) -> None:
+    if args.task_start is not None:
+        history.start_task(args.task_start)
+    elif args.task_pause:
+        history.pause_task()
+    elif args.task_resume:
+        history.resume_task()
+    elif args.task_continue:
+        state = history.task_state
+        if state is None:
+            raise ValueError("Задача не создана; используйте --task-start TITLE")
+        if state.stage == "done":
+            raise ValueError("Задача уже завершена; создайте новую через --task-start TITLE")
+        if state.paused:
+            raise ValueError("Задача на паузе; сначала снимите паузу через --task-resume")
+    if args.task_show:
+        print_task_state(history, json_only=True)
+    elif args.user is None and not (args.memory_show or args.profile_list or args.profile_show):
+        print_task_state(history)
+
+
 def load_profile(path: Path) -> UserProfile:
     """Проверить импорт целиком до изменения сохранённого профиля."""
     try:
@@ -443,7 +517,7 @@ def apply_profile_options(
     elif args.profile_show:
         data = profile.to_dict() if profile is not None else None
         console.print(Syntax(json.dumps(data, ensure_ascii=False, indent=2), "json", word_wrap=True))
-    elif status and not args.memory_show:
+    elif status and not (args.memory_show or args.task_show):
         console.print(Text(status))
     return profile
 
@@ -459,15 +533,22 @@ def main() -> None:
             raise ValueError(f"Checkpoint уже существует: {args.checkpoint}")
         if args.create_branch is not None:
             history.create_branch(args.create_branch, from_checkpoint=args.from_checkpoint)
-        if not (args.memory_show or args.profile_list or args.profile_show):
+        if not (args.memory_show or args.profile_list or args.profile_show or args.task_show):
             console.print(Text(f"Активная ветка: {history.active_branch}"))
         if args.list_branches:
             console.print(Text("Ветки: " + ", ".join(history.list_branches())))
             console.print(Text("Checkpoints: " + (", ".join(history.list_checkpoints()) or "нет")))
-        if args.user is None:
-            if args.checkpoint is not None:
-                history.create_checkpoint(args.checkpoint)
-                console.print(Text(f"Checkpoint сохранён: {args.checkpoint}"))
+    task_action = (
+        args.task_start is not None or args.task_show or args.task_pause
+        or args.task_resume or args.task_continue
+    )
+    if task_action:
+        history = history or HistoryManager(args.history)
+        apply_task_options(args, history)
+    if args.user is None and args.checkpoint is not None:
+        history.create_checkpoint(args.checkpoint)
+        if not args.task_show:
+            console.print(Text(f"Checkpoint сохранён: {args.checkpoint}"))
     memory_action = args.memory_set or args.memory_delete or args.memory_clear_working or args.memory_show
     profile_action = (
         args.profile is not None or args.profile_clear or imported is not None
@@ -485,14 +566,17 @@ def main() -> None:
     if args.memory_set:
         layer, key, value = args.memory_set
         store.remember(scope, layer, key, value)
-        console.print(Text(f"Память сохранена: {layer}, {key}"))
+        if not args.task_show:
+            console.print(Text(f"Память сохранена: {layer}, {key}"))
     elif args.memory_delete:
         layer, key = args.memory_delete
         store.forget(scope, layer, key)
-        console.print(Text(f"Запись памяти удалена: {layer}, {key}"))
+        if not args.task_show:
+            console.print(Text(f"Запись памяти удалена: {layer}, {key}"))
     elif args.memory_clear_working:
         store.clear_working(scope)
-        console.print(Text("Рабочая память текущего диалога/ветки очищена"))
+        if not args.task_show:
+            console.print(Text("Рабочая память текущего диалога/ветки очищена"))
     memory = store.snapshot(scope)
     if args.memory_show:
         print_memory(history, scope, memory)
@@ -555,6 +639,7 @@ def main() -> None:
         result, args.response_format,
         context_limit=args.context_limit, max_tokens=args.max_tokens,
     )
+    print_task_state(agent.history)
     if args.checkpoint is not None:
         agent.history.create_checkpoint(args.checkpoint)
         console.print(Text(f"Checkpoint сохранён: {args.checkpoint}"))

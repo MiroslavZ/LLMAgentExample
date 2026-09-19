@@ -10,9 +10,11 @@ from ..memory import MemoryStorageError
 from ..models import ContextSettings, Conversation, RequestOptions
 from ..profile import ProfileStorageError
 from ..service import ConversationBusyError, ConversationService, ConversationStorageError
+from ..task_state import CONTINUE_TASK
 from .components import STRATEGIES, STRATEGY_HELP, empty_chat, render_turn
 from .jobs import RequestRunner
 from .profiles import ProfilePanel
+from .tasks import TaskPanel
 
 UI_ERRORS = (ValueError, OSError, KeyError, ConversationBusyError, ConversationStorageError,
              MemoryStorageError, ProfileStorageError)
@@ -58,6 +60,10 @@ class ChatPage:
         self.memory_editors: dict[str, MemoryEditor] = {}
         self.profile_panel = ProfilePanel(
             service, conversation_id=lambda: self.conversation_id, busy=lambda: self.busy,
+        )
+        self.task_panel = TaskPanel(
+            service, snapshot=lambda: self.snapshot, busy=lambda: self.busy,
+            token_available=token_available, refresh_page=self.refresh, continue_task=self.continue_task,
         )
 
     def build(self) -> None:
@@ -117,6 +123,7 @@ class ChatPage:
                     ui.button(icon="close", on_click=lambda: self.settings_panel.classes(remove="panel-open")).props(
                         'flat round dense aria-label="Закрыть настройки"'
                     ).classes("mobile-settings ml-auto")
+                self.task_panel.build()
                 self.profile_panel.build()
                 self.settings_content = ui.column().classes("settings-content")
         self.refresh(force=True)
@@ -223,7 +230,7 @@ class ChatPage:
             if force or settings_key != self._settings_key:
                 self._settings_key = settings_key
                 self.render_settings()
-            composer_key = (current.id, current.started, self.busy)
+            composer_key = (current.id, current.started, self.busy, current.task_state)
             if force or composer_key != self._composer_key:
                 self._composer_key = composer_key
                 self.render_composer()
@@ -234,6 +241,7 @@ class ChatPage:
                 self.render_banner(error)
             self.refresh_memory()
             self.profile_panel.refresh()
+            self.task_panel.refresh()
         except UI_ERRORS:
             self.subtitle.set_text("Не удалось прочитать диалоги. Проверьте хранилище.")
 
@@ -428,6 +436,9 @@ class ChatPage:
 
     def render_composer(self) -> None:
         draft = self.drafts.get(self.snapshot.id, Draft(system=self.snapshot.system_prompt))
+        task = self.snapshot.task_state
+        active_task = task is not None and task.stage != "done"
+        paused = task is not None and task.paused
         self.composer.clear()
         with self.composer:
             self.system_input = None
@@ -450,7 +461,8 @@ class ChatPage:
                     "{ e.preventDefault(); emit(); } }"
                 ))
                 with ui.row().classes("composer-toolbar"):
-                    self.meta_input = ui.checkbox("Мета-промпт", value=draft.meta_prompt).props("dense size=sm").tooltip(
+                    self.meta_input = ui.checkbox("Мета-промпт", value=draft.meta_prompt and not active_task).props("dense size=sm").tooltip(
+                        "Недоступен во время активной задачи и на паузе." if active_task or paused else
                         "Сначала агент улучшит ваш запрос, затем выполнит его. Два запроса к модели."
                     )
                     ui.space()
@@ -474,9 +486,10 @@ class ChatPage:
                 ui.label("Ответы могут содержать ошибки")
         for widget in (self.user_input, self.meta_input, self.temperature_input, self.max_tokens_input):
             widget.set_enabled(not self.busy)
+        self.meta_input.set_enabled(not self.busy and not active_task and not paused)
         if self.system_input:
             self.system_input.set_enabled(not self.busy)
-        self.send_button.set_enabled(not self.busy and self.token_available)
+        self.send_button.set_enabled(not self.busy and not paused and self.token_available)
         if self.busy:
             self.send_button.props("loading")
 
@@ -566,6 +579,10 @@ class ChatPage:
     def send(self) -> None:
         if self.busy or not self.token_available:
             return
+        task = self.snapshot.task_state
+        if task is not None and task.paused:
+            ui.notify("Задача на паузе. Сначала возобновите её.", type="warning")
+            return
         self.remember_draft()
         draft = self.drafts[self.snapshot.id]
         if not draft.user.strip():
@@ -590,3 +607,13 @@ class ChatPage:
             self.refresh()
         except UI_ERRORS as error:
             ui.notify(str(error) if isinstance(error, (ValueError, ConversationBusyError)) else "Не удалось отправить сообщение.", type="negative")
+
+    def continue_task(self) -> None:
+        task = self.snapshot.task_state
+        if self.busy or not self.token_available or task is None or task.stage == "done" or task.paused:
+            return
+        if (self.user_input.value or "").strip():
+            ui.notify("Сначала отправьте или очистите черновик сообщения.", type="warning")
+            return
+        self.user_input.set_value(CONTINUE_TASK)
+        self.send()

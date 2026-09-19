@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Literal
 
+from .history import HistoryManager
+from .task_state import TaskState
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -78,6 +81,10 @@ class Conversation:
     working_context: object = field(default_factory=list)
     created_at: str = field(default_factory=utc_now)
     updated_at: str = field(default_factory=utc_now)
+
+    @property
+    def task_state(self) -> TaskState | None:
+        return HistoryManager.task_from_data(self.working_context)
 
     @property
     def busy(self) -> bool:

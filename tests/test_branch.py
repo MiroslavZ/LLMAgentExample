@@ -34,7 +34,8 @@ class BranchTests(unittest.TestCase):
         output = io.StringIO()
         with patch("sys.argv", [
             "main.py", "--history", str(self.path),
-            "--memory-db", str(self.path.with_suffix(".sqlite3")), *options,
+            "--memory-db", str(self.path.with_suffix(".sqlite3")),
+            "--invariants-file", str(self.path.with_name("invariants.json")), *options,
         ]), patch(
             "llm_agent.cli.console", Console(file=output, width=180, color_system=None),
         ):

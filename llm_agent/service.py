@@ -20,6 +20,7 @@ from openai import (
 from .agent import Agent
 from .context_strategy import FactsStrategy, WindowStrategy
 from .history import HistoryManager, TokenUsage
+from .invariants import InvariantSet, InvariantStorageError, InvariantStore
 from .models import ContextSettings, Conversation, RequestOptions, Turn, utc_now
 from .memory import MemorySnapshot, MemoryStorageError, MemoryStore
 from .profile import ProfileStorageError, ProfileStore, UserProfile
@@ -83,6 +84,17 @@ class _ConversationHistory(HistoryManager):
         finally:
             self._turn_updates = {}
 
+    def add_refusal(self, user: str, assistant: str, usage: TokenUsage | None) -> None:
+        self._turn_updates = {
+            "answer": assistant,
+            "status": "completed",
+            "elapsed_seconds": time.perf_counter() - self.started_at,
+        }
+        try:
+            super().add_exchange(user, assistant, usage)
+        finally:
+            self._turn_updates = {}
+
     def compress(self, count: int, summary: str, usage: TokenUsage | None) -> None:
         self._turn_updates = {"memory_updated": True}
         try:
@@ -99,6 +111,8 @@ def _friendly_error(error: Exception) -> str:
         return "Не удалось загрузить память. Проверьте файл memory.sqlite3 и доступ к каталогу данных."
     if isinstance(error, ProfileStorageError):
         return "Не удалось загрузить профиль. Проверьте файл profiles.sqlite3 и доступ к каталогу данных."
+    if isinstance(error, InvariantStorageError):
+        return "Не удалось загрузить инварианты. Исправьте файл правил; запрос к модели не отправлен."
     if isinstance(error, TaskStateError):
         # Собственные сообщения валидатора содержат конкретную причину и
         # контекст задачи, без тела ответа или текста исключений SDK.
@@ -127,10 +141,14 @@ class ConversationService:
     Чтение атомарных снимков не ждёт ответа модели. Разные диалоги независимы.
     """
 
-    def __init__(self, data_dir: Path, token: str | None) -> None:
+    def __init__(
+        self, data_dir: Path, token: str | None, *, invariants_path: Path | None = None,
+    ) -> None:
         self.store = ConversationStore(data_dir)
         self.memory = MemoryStore(self.store.data_dir / "memory.sqlite3")
         self.profiles = ProfileStore(self.store.data_dir / "profiles.sqlite3")
+        self.invariants_path = Path(invariants_path) if invariants_path is not None else self.store.data_dir.parent / "invariants.json"
+        self.invariants = InvariantStore(self.invariants_path)
         self._token = token
         self._state_lock = threading.Lock()
         self._locks: dict[str, threading.Lock] = {}
@@ -226,6 +244,19 @@ class ConversationService:
     def get_memory(self, conversation_id: str) -> MemorySnapshot:
         self.get(conversation_id)
         return self.memory.snapshot(conversation_id)
+
+    def get_invariants(self) -> InvariantSet:
+        """Прочесть общие правила заново, чтобы изменения применялись со следующим запросом."""
+        return self.invariants.load()
+
+    def save_invariants(self, invariants: InvariantSet, *, expected: InvariantSet) -> None:
+        """Сохранить явные правки, не затирая изменения из другой вкладки."""
+        if not isinstance(invariants, InvariantSet) or not isinstance(expected, InvariantSet):
+            raise ValueError("Требуется набор инвариантов")
+        with self._state_lock:
+            if self.invariants.load() != expected:
+                raise ValueError("Правила уже изменены. Откройте редактор заново и внесите правки в актуальный набор.")
+            self.invariants.save(invariants)
 
     def _task_operation(self, conversation_id: str, action: str, title: str | None = None) -> Conversation:
         with self._operation(conversation_id):
@@ -416,6 +447,7 @@ class ConversationService:
                     "history": history, "timeout": 60.0, "max_retries": 0,
                     "memory": memory,
                     "profile": profile,
+                    "invariants": self.get_invariants(),
                 }
                 if settings.strategy in ("window", "facts"):
                     agent_options.update(strategy=settings.strategy, window_size=settings.window_size)

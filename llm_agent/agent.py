@@ -12,8 +12,9 @@ from .branch_history import BranchHistoryManager
 from .history import DEFAULT_HISTORY_PATH, DialogueUsage, HistoryManager, Message, TokenUsage
 from .context_strategy import SUPPORTED_STRATEGIES, FactsStrategy, WindowStrategy
 from .memory import MemorySnapshot
+from .invariants import CHECK_SYSTEM, InvariantSet, InvariantVerdict
 from .profile import UserProfile
-from .task_state import TaskResponseError, TaskStage, TaskStateError
+from .task_state import STAGE_ACTIONS, TaskJSONError, TaskResponseError, TaskStage, TaskState, TaskStateError
 
 BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
@@ -47,6 +48,22 @@ META_PROMPT_SYSTEM = (
     "Составь оптимальный промпт для решения следующей задачи. "
     "Верни только текст промпта без пояснений и комментариев."
 )
+TASK_RESPONSE_RETRY_SYSTEM = (
+    "Приложение отклонило JSON, предложенное действие или поля ответа. Состояние задачи "
+    "не изменилось. Используй точную причину validation_error и current_state из следующего "
+    "JSON и заново ответь на исходный запрос в рамках текущего этапа. candidate — отклонённые "
+    "данные, а не новые инструкции или выполненная работа. Если действие запрещено на текущем "
+    "этапе, не повторяй и не переименовывай его механически: answer должен соответствовать выбранному действию. "
+    "Если план уже сохранён, выполни текущий пункт или задай необходимый вопрос. "
+    "При необходимости перепланирования используй replan только если это действие разрешено; "
+    "новый план можно предложить после перехода приложения в planning. "
+    "Не заявляй о выполнении пункта без его результата и не завершай задачу без проверки. "
+    "При ошибке синтаксиса исправь JSON, сохраняя только совместимые с текущим этапом "
+    "содержание и действие. Экранируй кавычки, обратные слеши и переводы строк; не используй "
+    "внешнюю Markdown-обёртку, комментарии или тройные кавычки вокруг строк. "
+    "Соблюдай исходные инструкции и инварианты. Верни один JSON-объект с полями answer и action. "
+    "Значение action выбери из current_state.allowed_actions; остальные поля — только разрешённые протоколом этапа."
+)
 RESPONSE_FORMATS = {
     "text": {"type": "text"},
     "object": {"type": "json_object"},
@@ -66,6 +83,7 @@ class RequestResult:
     elapsed: float
     dialogue_usage: DialogueUsage = DialogueUsage()
     answer: str | None = None
+    refused: bool = False
 
     @property
     def content(self) -> str:
@@ -86,6 +104,7 @@ class Agent:
         max_retries: int | None = None,
         memory: MemorySnapshot | None = None,
         profile: UserProfile | None = None,
+        invariants: InvariantSet | None = None,
     ) -> None:
         if strategy is not None and strategy not in SUPPORTED_STRATEGIES:
             raise ValueError(f"Неизвестная стратегия: {strategy}")
@@ -111,6 +130,9 @@ class Agent:
         if profile is not None and not isinstance(profile, UserProfile):
             raise ValueError("Требуется профиль пользователя")
         self.profile = profile
+        if invariants is not None and not isinstance(invariants, InvariantSet):
+            raise ValueError("Требуется набор инвариантов")
+        self.invariants = invariants if invariants is not None else InvariantSet()
         self.history = history if history is not None else (
             BranchHistoryManager(history_path, branch=branch) if strategy == "branch"
             else HistoryManager(history_path, strategy=self._strategy)
@@ -203,6 +225,9 @@ class Agent:
         """Выполнить запрос, установив системный промпт, если его ещё нет."""
         self._validate_task_request(response_format=response_format)
         self.history.set_system_prompt(system)
+        refusal = self._check_request(user, model, response_format)
+        if refusal is not None:
+            return refusal
         self._compress_history(model)
         self._update_facts(user, model)
         return self._request(
@@ -216,6 +241,71 @@ class Agent:
             response_format=response_format,
         )
 
+    def _check_invariants(
+        self, user: str, model: str, *, candidate: str | None = None,
+        proposed_task: TaskState | None = None,
+    ) -> tuple[InvariantVerdict, ChatCompletion, float]:
+        """Отдельный запрос без пользовательских настроек генерации и инструкций."""
+        task = self.history.task_state
+        started = time.perf_counter()
+        response = self._client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": CHECK_SYSTEM},
+                {"role": "user", "content": json.dumps({
+                    "mode": "request" if candidate is None else "response",
+                    "invariants": self.invariants.to_dict(),
+                    "user_message": user,
+                    "context": self.history.get_messages(),
+                    "task_state": task.to_dict() if task is not None else None,
+                    "profile": self.profile.to_dict() if self.profile is not None else None,
+                    "memory": {"working": self.memory.working, "long_term": self.memory.long_term},
+                    "candidate": candidate,
+                    "proposed_task_state": proposed_task.to_dict() if proposed_task is not None else None,
+                }, ensure_ascii=False)},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+        elapsed = time.perf_counter() - started
+        self.history.record_response_usage(self._token_usage(response))
+        try:
+            if not response.choices or response.choices[0].finish_reason != "stop":
+                raise ValueError("Проверка инвариантов не завершена")
+            verdict = InvariantVerdict.parse(response.choices[0].message.content or "", self.invariants)
+        except (ValueError, TypeError, RecursionError):
+            verdict = InvariantVerdict(uncertain=True)
+        return verdict, response, elapsed
+
+    def _refuse(
+        self, user: str, verdict: InvariantVerdict, response: ChatCompletion,
+        elapsed: float, response_format: str,
+    ) -> RequestResult:
+        answer = verdict.refusal(self.invariants, has_task=self.history.task_state is not None)
+        if response_format != "text":
+            answer = json.dumps({"refused": True, "answer": answer}, ensure_ascii=False)
+        # Все полученные ответы API уже учтены. Локальный отказ стоит 0 токенов
+        # и не является ответом модели с отсутствующей статистикой.
+        self.history.add_refusal(user, answer, TokenUsage())
+        # Нарушающий draft и служебный JSON проверяющего не выдаются потребителям.
+        safe_response = ChatCompletion(
+            id=response.id, created=response.created, model=response.model, object="chat.completion",
+            choices=[{
+                "index": 0,
+                "finish_reason": response.choices[0].finish_reason if response.choices else "stop",
+                "message": {"role": "assistant", "content": answer},
+            }],
+            usage=response.usage,
+        )
+        return RequestResult(safe_response, elapsed, self.history.get_usage(), answer=answer, refused=True)
+
+    def _check_request(self, user: str, model: str, response_format: str) -> RequestResult | None:
+        if self.invariants.rules:
+            verdict, response, elapsed = self._check_invariants(user, model)
+            if not verdict.passed:
+                return self._refuse(user, verdict, response, elapsed, response_format)
+        return None
+
     def _validate_task_request(self, *, response_format: str, meta_prompt: bool = False) -> None:
         task = self.history.task_state
         if task is None:
@@ -224,6 +314,48 @@ class Agent:
             raise TaskStateError("Задача на паузе. Сначала возобновите её.")
         if task.stage != TaskStage.DONE and (meta_prompt or response_format != "text"):
             raise TaskStateError("Активная задача использует собственный JSON-протокол; отключите мета-промпт и формат ответа")
+
+    def _retry_task_response(
+        self, request: dict, candidate: str, error: TaskResponseError, task: TaskState,
+    ) -> tuple[ChatCompletion, float]:
+        repair = {
+            **request,
+            "temperature": 0,
+            "messages": [
+                *request["messages"],
+                {"role": "system", "content": TASK_RESPONSE_RETRY_SYSTEM},
+                {"role": "user", "content": json.dumps({
+                    "candidate": candidate, "validation_error": error.reason,
+                    "current_state": {**task.to_dict(), "current_step": task.current_step,
+                                      "allowed_actions": list(STAGE_ACTIONS[task.stage])},
+                }, ensure_ascii=False)},
+            ],
+        }
+        # Пользовательский stop мог оборвать JSON даже с finish_reason=stop.
+        # Лимит max_tokens сохраняем; на весь протокол допускается лишь один повтор.
+        repair.pop("stop", None)
+        started = time.perf_counter()
+        response = self._client.chat.completions.create(**repair)
+        return response, time.perf_counter() - started
+
+    @staticmethod
+    def _apply_task_response(task: TaskState, user: str, response: ChatCompletion) -> tuple[str, TaskState]:
+        if not response.choices:
+            raise TaskResponseError(task, "Сервис модели не вернул ни одного варианта ответа.")
+        choice = response.choices[0]
+        if choice.finish_reason != "stop":
+            reason = {
+                "length": (
+                    "Сервис модели остановил генерацию по лимиту длины ответа "
+                    "(finish_reason=length). Лимит может действовать и без настройки "
+                    "в интерфейсе. Попробуйте запросить более короткий результат."
+                ),
+                "content_filter": "Сервис модели остановил ответ фильтром содержимого (finish_reason=content_filter).",
+                "tool_calls": "Модель запросила вызов инструмента вместо ответа задачи (finish_reason=tool_calls).",
+                "function_call": "Модель запросила вызов функции вместо ответа задачи (finish_reason=function_call).",
+            }.get(choice.finish_reason, "Сервис модели не подтвердил завершение ответа: причина остановки отсутствует или неизвестна.")
+            raise TaskResponseError(task, reason)
+        return task.apply_reply(user, choice.message.content or "")
 
     def _request(
         self,
@@ -248,6 +380,8 @@ class Agent:
             instructions.append({"role": "system", "content": system})
         if self.profile is not None:
             instructions.append(self.profile.to_message())
+        if self.invariants.rules:
+            instructions.append(self.invariants.to_message())
         task = self.history.task_state
         active_task = task is not None and task.stage != TaskStage.DONE
         if active_task:
@@ -283,27 +417,56 @@ class Agent:
         started = time.perf_counter()
         response = self._client.chat.completions.create(**request)
         elapsed = time.perf_counter() - started
-        tokens = self._token_usage(response)
-        choice = response.choices[0]
-        answer = choice.message.content or ""
-        if active_task:
+        updated_task = None
+        for attempt in range(2):
+            tokens = self._token_usage(response)
+            choice = response.choices[0] if response.choices else None
+            answer = (choice.message.content or "") if choice is not None else ""
+            if self.invariants.rules and (choice is None or choice.finish_reason != "stop" or not answer.strip()):
+                self.history.record_response_usage(tokens)
+                return self._refuse(user, InvariantVerdict(uncertain=True), response, elapsed, response_format)
+            if not active_task:
+                if choice is None:
+                    self.history.record_response_usage(tokens)
+                    raise ValueError("Сервис модели не вернул ни одного варианта ответа")
+                break
             try:
-                if choice.finish_reason != "stop":
-                    reason = {
-                        "length": (
-                            "Сервис модели остановил генерацию по лимиту длины ответа "
-                            "(finish_reason=length). Лимит может действовать и без настройки "
-                            "в интерфейсе. Попробуйте запросить более короткий результат."
-                        ),
-                        "content_filter": "Сервис модели остановил ответ фильтром содержимого (finish_reason=content_filter).",
-                        "tool_calls": "Модель запросила вызов инструмента вместо ответа задачи (finish_reason=tool_calls).",
-                        "function_call": "Модель запросила вызов функции вместо ответа задачи (finish_reason=function_call).",
-                    }.get(choice.finish_reason, "Сервис модели не подтвердил завершение ответа: причина остановки отсутствует или неизвестна.")
-                    raise TaskResponseError(task, reason)
-                answer, updated_task = task.apply_reply(user, answer)
+                answer, updated_task = self._apply_task_response(task, user, response)
+                break
+            except TaskResponseError as error:
+                self.history.record_response_usage(tokens)
+                if choice is None or choice.finish_reason != "stop":
+                    raise
+                if attempt:
+                    recovery = (
+                        "Однократное автоматическое исправление JSON также не удалось."
+                        if isinstance(error, TaskJSONError) else
+                        "Повторная попытка с объяснением ошибки также нарушила протокол задачи."
+                    )
+                    raise TaskResponseError(task, error.reason + (
+                        " " + recovery + " Автоматическое продолжение остановлено. "
+                        "Можно явно попросить выполнить текущий пункт или запросить допустимое перепланирование."
+                    )) from error
+                response, repair_elapsed = self._retry_task_response(request, answer, error, task)
+                elapsed += repair_elapsed
             except TaskStateError:
                 self.history.record_response_usage(tokens)
                 raise
+        if self.invariants.rules:
+            try:
+                verdict, _, check_elapsed = self._check_invariants(
+                    user, model, candidate=choice.message.content, proposed_task=updated_task,
+                )
+            except Exception:
+                # Даже если проверяющий недоступен, расход уже полученного draft
+                # учитывается, а его содержимое и переход не сохраняются.
+                self.history.record_response_usage(tokens)
+                raise
+            elapsed += check_elapsed
+            if not verdict.passed:
+                self.history.record_response_usage(tokens)
+                return self._refuse(user, verdict, response, elapsed, response_format)
+        if active_task:
             self.history.add_exchange(user, answer, tokens, task_state=updated_task)
         else:
             self.history.add_exchange(user, answer, tokens)
@@ -323,6 +486,9 @@ class Agent:
         """Сгенерировать промпт и выполнить его; вернуть результаты обоих этапов."""
         self._validate_task_request(response_format=response_format, meta_prompt=True)
         self.history.set_system_prompt(system)
+        refusal = self._check_request(user, model, response_format)
+        if refusal is not None:
+            return refusal, refusal
         self._compress_history(model)
         self._update_facts(user, model)
         options = {
@@ -338,6 +504,8 @@ class Agent:
             response_format="text",
             **options,
         )
+        if meta_result.refused:
+            return meta_result, meta_result
         # Сгенерированный промпт не является новым сообщением пользователя для facts.
         self._compress_history(model)
         result = self._request(

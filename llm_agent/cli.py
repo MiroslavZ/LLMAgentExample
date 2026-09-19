@@ -15,6 +15,9 @@ from .agent import (
     META_PROMPT_SYSTEM, Agent, CompressionResult, RequestResult,
 )
 from .history import DEFAULT_HISTORY_PATH, HistoryManager
+from .invariants import (
+    DEFAULT_INVARIANTS_PATH, InvariantSet, InvariantStorageError, InvariantStore,
+)
 from .branch_history import BranchHistoryManager
 from .context_strategy import SUPPORTED_STRATEGIES
 from .memory import (
@@ -64,7 +67,7 @@ def parse_args() -> argparse.Namespace:
         help=f"Имя модели (по умолчанию: {DEFAULT_MODEL})",
     )
     parser.add_argument("--system", help="Системный промпт диалога (сохраняется, если ещё не задан)")
-    parser.add_argument("--user", help="Текст запроса; необязателен для управления ветками, памятью, профилями и задачей")
+    parser.add_argument("--user", help="Текст запроса; необязателен для управления ветками, памятью, профилями, задачей и инвариантами")
     task_action = parser.add_mutually_exclusive_group()
     task_action.add_argument(
         "--task-start", metavar="TITLE",
@@ -216,6 +219,18 @@ def parse_args() -> argparse.Namespace:
         "--profile-show", action="store_true",
         help="Показать выбранный профиль текущего диалога/ветки (null, если профиль отключён)",
     )
+    parser.add_argument(
+        "--invariants-file", type=Path, default=DEFAULT_INVARIANTS_PATH, metavar="PATH",
+        help=f"Отдельный файл обязательных правил агента (по умолчанию: {DEFAULT_INVARIANTS_PATH})",
+    )
+    parser.add_argument(
+        "--invariants-import", type=Path, metavar="PATH",
+        help="Проверить JSON и заменить общие правила в --invariants-file без обращения к API",
+    )
+    parser.add_argument(
+        "--invariants-show", action="store_true",
+        help="Показать действующие инварианты в JSON без обращения к API",
+    )
     args = parser.parse_args()
     task_options = (
         args.task_start is not None, args.task_show, args.task_pause,
@@ -249,6 +264,11 @@ def parse_args() -> argparse.Namespace:
         if any(not value.strip() for value in memory_edit[1:]):
             parser.error("Ключ и значение памяти должны быть непустыми строками")
     branch_options = (args.branch, args.checkpoint, args.create_branch, args.from_checkpoint, args.list_branches)
+    if args.invariants_show and (
+        args.user is not None or any(branch_options) or any(profile_options) or any(task_options)
+        or memory_edit or args.memory_show or args.memory_clear_working
+    ):
+        parser.error("--invariants-show совмещается только с --invariants-import и выбором файла")
     if any(branch_options) and args.strategy != "branch":
         parser.error("Аргументы управления ветками требуют --strategy branch")
     if (args.create_branch is None) != (args.from_checkpoint is None):
@@ -259,9 +279,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("--list-branches не совмещается с --user")
     if args.user is None:
         if not any(branch_options) and not any(profile_options) and not any(task_options) and not (
+            args.invariants_import or args.invariants_show or
             memory_edit or args.memory_show or args.memory_clear_working
         ):
-            parser.error("Укажите --user или операцию управления ветками, памятью, профилями или задачей")
+            parser.error("Укажите --user или операцию управления ветками, памятью, профилями, задачей или инвариантами")
         if args.meta_prompt or args.system is not None:
             parser.error("--meta-prompt и --system требуют --user")
     if args.strategy in ("window", "facts") and args.window_size is None:
@@ -270,7 +291,7 @@ def parse_args() -> argparse.Namespace:
         parser.error("--window-size требует --strategy window или facts")
     if args.strategy is not None and (args.last_messages is not None or args.compress_every is not None):
         parser.error("--strategy нельзя совмещать с --last-messages или --compress-every")
-    if not args.task_show and (args.last_messages is None) != (args.compress_every is None):
+    if not (args.task_show or args.invariants_show) and (args.last_messages is None) != (args.compress_every is None):
         console.print(
             "[yellow]Предупреждение: для работы сжатия истории необходимо указать оба аргумента: "
             "--last-messages и --compress-every. Агент продолжит работу без сжатия.[/yellow]"
@@ -355,7 +376,7 @@ def print_response(
     context_limit: int | None = None, max_tokens: int | None = None,
 ) -> None:
     response = result.response
-    choice = response.choices[0]
+    choice = response.choices[0] if response.choices else None
 
     console.print(
         Panel(
@@ -401,7 +422,7 @@ def print_response(
     )
     if total.missing_responses:
         meta.add_row("Ответов без статистики", str(total.missing_responses))
-    meta.add_row("Причина остановки", choice.finish_reason or "—")
+    meta.add_row("Причина остановки", (choice.finish_reason if choice is not None else None) or "—")
     meta.add_row("Время", f"{result.elapsed:.2f} с")
     console.print()
     console.print(meta)
@@ -524,6 +545,21 @@ def apply_profile_options(
 
 def main() -> None:
     args = parse_args()
+    invariant_store = InvariantStore(args.invariants_file)
+    if args.invariants_import is not None:
+        try:
+            imported_invariants = InvariantSet.from_json(args.invariants_import.read_text(encoding="utf-8-sig"))
+        except FileNotFoundError as error:
+            raise ValueError(f"Файл инвариантов не найден: {args.invariants_import}") from error
+        except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as error:
+            raise ValueError(f"Некорректный JSON инвариантов: {args.invariants_import}") from error
+        invariant_store.save(imported_invariants)
+        if not (args.invariants_show or args.memory_show or args.task_show or args.profile_list or args.profile_show):
+            console.print(Text(f"Инварианты сохранены: {args.invariants_file}"))
+    invariants = invariant_store.load() if args.user is not None or args.invariants_show else None
+    if args.invariants_show:
+        console.print(Syntax(json.dumps(invariants.to_dict(), ensure_ascii=False, indent=2), "json", word_wrap=True))
+        return
     imported = load_profile(args.profile_import) if args.profile_import is not None else None
     history = None
     if args.strategy == "branch":
@@ -593,7 +629,7 @@ def main() -> None:
         last_messages=args.last_messages, compress_every=args.compress_every,
         on_compression=print_compression,
         strategy=args.strategy, window_size=args.window_size,
-        memory=memory, profile=profile,
+        memory=memory, profile=profile, invariants=invariants,
     )
     saved_system = agent.history.get_system_prompt()
     if saved_system is not None:
@@ -618,18 +654,19 @@ def main() -> None:
         )
         with console.status("[bold cyan]Генерация промпта и выполнение запроса…", spinner="dots"):
             meta_result, result = agent.request_with_meta_prompt(**request_options)
-        print_response(
-            meta_result, "text", title="Сгенерированный промпт",
-            context_limit=args.context_limit, max_tokens=args.max_tokens,
-        )
-        console.print()
+        if not meta_result.refused:
+            print_response(
+                meta_result, "text", title="Сгенерированный промпт",
+                context_limit=args.context_limit, max_tokens=args.max_tokens,
+            )
+            console.print()
 
-        print_request_info(
-            args,
-            system=args.system,
-            user=meta_result.content,
-            stage="2/2 — основной запрос",
-        )
+            print_request_info(
+                args,
+                system=args.system,
+                user=meta_result.content,
+                stage="2/2 — основной запрос",
+            )
     else:
         print_request_info(args, system=args.system, user=args.user)
         with console.status("[bold cyan]Ожидание ответа модели…", spinner="dots"):
@@ -649,5 +686,5 @@ def run() -> None:
     """Запустить CLI с выводом ожидаемых ошибок без traceback."""
     try:
         main()
-    except (ValueError, OSError, MemoryStorageError, ProfileStorageError) as error:
+    except (ValueError, OSError, MemoryStorageError, ProfileStorageError, InvariantStorageError) as error:
         raise SystemExit(str(error)) from error

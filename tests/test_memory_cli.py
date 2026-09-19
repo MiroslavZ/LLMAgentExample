@@ -34,7 +34,8 @@ class MemoryCliTests(unittest.TestCase):
         output = io.StringIO()
         arguments = [
             "main.py", "--history", str(history or self.path),
-            "--memory-db", str(self.database), *options,
+            "--memory-db", str(self.database),
+            "--invariants-file", str(self.path.with_name("invariants.json")), *options,
         ]
         with patch("sys.argv", arguments), patch(
             "llm_agent.cli.console", Console(file=output, width=240, color_system=None),

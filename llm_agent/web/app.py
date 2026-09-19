@@ -33,11 +33,15 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1", help="Адрес сервера (по умолчанию 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8080, help="Порт сервера (по умолчанию 8080)")
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR, help="Каталог диалогов")
+    parser.add_argument(
+        "--invariants-file", type=Path, metavar="PATH",
+        help="Общий файл инвариантов (по умолчанию: invariants.json рядом с каталогом диалогов)",
+    )
     parser.add_argument("--no-browser", action="store_true", help="Не открывать браузер автоматически")
     args = parser.parse_args()
     load_dotenv(PROJECT_ROOT / ".env")
     token = os.getenv("API_KEY", "").strip()
-    service = ConversationService(args.data_dir, token=token or None)
+    service = ConversationService(args.data_dir, token=token or None, invariants_path=args.invariants_file)
     create_app(service, token_available=bool(token))
     ui.run(
         host=args.host, port=args.port, title="Агент · Чат", favicon="✦",

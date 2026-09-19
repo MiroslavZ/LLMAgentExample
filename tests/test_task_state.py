@@ -232,7 +232,9 @@ class TaskIntegrationTests(unittest.TestCase):
                 restored = HistoryManager(self.path)
                 self.assertEqual(restored.task_state, TaskState("Задача"))
                 self.assertEqual(restored.get_messages(), [])
-                expected_tokens = previous_usage.total_tokens + (0 if isinstance(error, Exception) else 130)
+                expected_tokens = previous_usage.total_tokens + (
+                    0 if isinstance(error, Exception) else 130 if error is truncated else 260
+                )
                 self.assertEqual(restored.get_usage().total_tokens, expected_tokens)
 
     def test_rejected_response_without_usage_marks_total_incomplete(self):
@@ -240,7 +242,7 @@ class TaskIntegrationTests(unittest.TestCase):
         self.create.return_value = completion(missing=True)
         with self.assertRaises(TaskStateError):
             self.agent().request(CONTINUE_TASK)
-        self.assertEqual(HistoryManager(self.path).get_usage().missing_responses, 1)
+        self.assertEqual(HistoryManager(self.path).get_usage().missing_responses, 2)
 
     def test_failed_save_does_not_advance_in_memory_or_on_disk(self):
         HistoryManager(self.path).start_task("Задача")

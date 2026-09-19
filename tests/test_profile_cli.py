@@ -42,7 +42,8 @@ class ProfileCliTests(unittest.TestCase):
         output = io.StringIO()
         arguments = [
             "main.py", "--history", str(history or self.history),
-            "--memory-db", str(self.memory_db), *options,
+            "--memory-db", str(self.memory_db),
+            "--invariants-file", str(self.directory / "invariants.json"), *options,
         ]
         with patch("sys.argv", arguments), patch(
             "llm_agent.cli.console", Console(file=output, width=240, color_system=None),

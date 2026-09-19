@@ -281,6 +281,10 @@ class HistoryManager:
         self._validate(messages)
         self._save(messages, facts=self._facts, task_state=task_state if task_state is not None else _UNCHANGED)
 
+    def add_refusal(self, user: str, assistant: str, usage: TokenUsage | None) -> None:
+        """Сохранить окончательный отказ, не меняя состояние задачи."""
+        self.add_exchange(user, assistant, usage)
+
     def add_message(self, role: Literal["user", "assistant"], content: str) -> None:
         self.add_messages([{"role": role, "content": content}])
 

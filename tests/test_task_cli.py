@@ -35,7 +35,8 @@ class TaskCliTests(unittest.TestCase):
         output = io.StringIO()
         arguments = [
             "main.py", "--history", str(self.history),
-            "--memory-db", str(self.memory_db), *options,
+            "--memory-db", str(self.memory_db),
+            "--invariants-file", str(self.directory / "invariants.json"), *options,
         ]
         with patch("sys.argv", arguments), patch(
             "llm_agent.cli.console", Console(file=output, width=240, color_system=None),
@@ -204,7 +205,7 @@ class TaskCliTests(unittest.TestCase):
         restored = BranchHistoryManager(self.history)
         self.assertEqual(restored.task_state, before)
         self.assertEqual(restored.get_messages(), [])
-        self.assertEqual(restored.get_usage().total_tokens, 130)
+        self.assertEqual(restored.get_usage().total_tokens, 260)
         self.assertEqual(restored.list_checkpoints(), [])
 
     def test_invalid_combinations_fail_during_argument_parsing(self):

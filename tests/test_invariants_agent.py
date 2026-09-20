@@ -181,6 +181,7 @@ class AgentInvariantTests(unittest.TestCase):
     def test_postcheck_rejects_hidden_plan_and_preserves_each_stage(self):
         planning = TaskState("Написать функцию")
         _, execution = planning.apply_reply("Только Python", task_reply("plan", plan=["Написать код"]))
+        execution = execution.approve_plan()
         _, validation = execution.apply_reply(CONTINUE_TASK, task_reply("complete_step", "def add(a, b): return a + b"))
         for state, candidate in (
             (planning, task_reply("plan", "План подготовлен", plan=["Создать проект Java"])),

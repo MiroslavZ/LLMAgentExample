@@ -14,7 +14,10 @@ from .context_strategy import SUPPORTED_STRATEGIES, FactsStrategy, WindowStrateg
 from .memory import MemorySnapshot
 from .invariants import CHECK_SYSTEM, InvariantSet, InvariantVerdict
 from .profile import UserProfile
-from .task_state import STAGE_ACTIONS, TaskJSONError, TaskResponseError, TaskStage, TaskState, TaskStateError
+from .task_state import (
+    CONTINUE_TASK, PLAN_APPROVAL_REQUIRED, STAGE_ACTIONS,
+    TaskJSONError, TaskResponseError, TaskStage, TaskState, TaskStateError,
+)
 
 BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
@@ -223,7 +226,7 @@ class Agent:
         response_format: str = "text",
     ) -> RequestResult:
         """Выполнить запрос, установив системный промпт, если его ещё нет."""
-        self._validate_task_request(response_format=response_format)
+        self._validate_task_request(user, response_format=response_format)
         self.history.set_system_prompt(system)
         refusal = self._check_request(user, model, response_format)
         if refusal is not None:
@@ -306,12 +309,14 @@ class Agent:
                 return self._refuse(user, verdict, response, elapsed, response_format)
         return None
 
-    def _validate_task_request(self, *, response_format: str, meta_prompt: bool = False) -> None:
+    def _validate_task_request(self, user: str, *, response_format: str, meta_prompt: bool = False) -> None:
         task = self.history.task_state
         if task is None:
             return
         if task.paused:
             raise TaskStateError("Задача на паузе. Сначала возобновите её.")
+        if task.awaiting_approval and user.strip() == CONTINUE_TASK:
+            raise TaskStateError(PLAN_APPROVAL_REQUIRED)
         if task.stage != TaskStage.DONE and (meta_prompt or response_format != "text"):
             raise TaskStateError("Активная задача использует собственный JSON-протокол; отключите мета-промпт и формат ответа")
 
@@ -484,7 +489,7 @@ class Agent:
         response_format: str = "text",
     ) -> tuple[RequestResult, RequestResult]:
         """Сгенерировать промпт и выполнить его; вернуть результаты обоих этапов."""
-        self._validate_task_request(response_format=response_format, meta_prompt=True)
+        self._validate_task_request(user, response_format=response_format, meta_prompt=True)
         self.history.set_system_prompt(system)
         refusal = self._check_request(user, model, response_format)
         if refusal is not None:

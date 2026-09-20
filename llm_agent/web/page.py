@@ -625,6 +625,9 @@ class ChatPage:
         task = self.snapshot.task_state
         if self.busy or not self.token_available or task is None or task.stage == "done" or task.paused:
             return
+        if task.awaiting_approval:
+            ui.notify("Сначала утвердите план или отправьте правки в чат.", type="warning")
+            return
         self.invariant_panel.refresh()
         if not self.invariant_panel.available:
             self.refresh()

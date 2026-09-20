@@ -124,6 +124,11 @@ class HistoryManager:
             raise TaskStateError("Сначала создайте задачу")
         self._save(self._messages, facts=self._facts, task_state=self.task_state.resume())
 
+    def approve_task_plan(self) -> None:
+        if self.task_state is None:
+            raise TaskStateError("Сначала создайте задачу")
+        self._save(self._messages, facts=self._facts, task_state=self.task_state.approve_plan())
+
     @staticmethod
     def _validate(messages: object) -> None:
         if not isinstance(messages, list) or any(

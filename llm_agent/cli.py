@@ -86,6 +86,10 @@ def parse_args() -> argparse.Namespace:
         help="Снять паузу задачи без обращения к API; добавьте --user для следующего шага",
     )
     task_action.add_argument(
+        "--task-approve", action="store_true",
+        help="Утвердить сохранённый план без обращения к API; добавьте --user для выполнения первого шага",
+    )
+    task_action.add_argument(
         "--task-continue", action="store_true",
         help="Выполнить следующий шаг сохранённой задачи через API без повторного описания",
     )
@@ -234,7 +238,7 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     task_options = (
         args.task_start is not None, args.task_show, args.task_pause,
-        args.task_resume, args.task_continue,
+        args.task_resume, args.task_approve, args.task_continue,
     )
     if args.task_start is not None and not args.task_start.strip():
         parser.error("Название задачи должно быть непустой строкой")
@@ -478,6 +482,10 @@ def print_task_state(history: HistoryManager, *, json_only: bool = False) -> Non
         details.add_row("Задача", Text(state.title))
         details.add_row("Этап", state.stage.value + (" · пауза" if state.paused else ""))
         details.add_row("Текущий шаг", Text(state.current_step))
+        if state.awaiting_approval:
+            details.add_row("План на утверждение", Text("\n".join(
+                f"{index}. {step}" for index, step in enumerate(state.plan, start=1)
+            )))
         details.add_row("Ожидаемое действие", Text(state.expected_action))
         console.print(Panel(details, title="Состояние задачи", border_style="cyan"))
 
@@ -489,6 +497,8 @@ def apply_task_options(args: argparse.Namespace, history: HistoryManager) -> Non
         history.pause_task()
     elif args.task_resume:
         history.resume_task()
+    elif args.task_approve:
+        history.approve_task_plan()
     elif args.task_continue:
         state = history.task_state
         if state is None:
@@ -497,6 +507,8 @@ def apply_task_options(args: argparse.Namespace, history: HistoryManager) -> Non
             raise ValueError("Задача уже завершена; создайте новую через --task-start TITLE")
         if state.paused:
             raise ValueError("Задача на паузе; сначала снимите паузу через --task-resume")
+        if state.awaiting_approval:
+            raise ValueError("План ожидает утверждения; используйте --task-approve или отправьте правки через --user")
     if args.task_show:
         print_task_state(history, json_only=True)
     elif args.user is None and not (args.memory_show or args.profile_list or args.profile_show):
@@ -576,7 +588,7 @@ def main() -> None:
             console.print(Text("Checkpoints: " + (", ".join(history.list_checkpoints()) or "нет")))
     task_action = (
         args.task_start is not None or args.task_show or args.task_pause
-        or args.task_resume or args.task_continue
+        or args.task_resume or args.task_approve or args.task_continue
     )
     if task_action:
         history = history or HistoryManager(args.history)

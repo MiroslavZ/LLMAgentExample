@@ -89,6 +89,7 @@ class TaskPageTests(unittest.IsolatedAsyncioTestCase):
     async def test_pause_and_resume_each_active_stage_preserve_progress_after_reload(self):
         states = (
             TaskState("Задача"),
+            TaskState("Задача", plan=("Первый", "Второй")),
             TaskState("Задача", stage=TaskStage.EXECUTION, plan=("Первый", "Второй"),
                       step=1, results=("Готов первый",), notes=("Уточнение",)),
             TaskState("Задача", stage=TaskStage.VALIDATION, plan=("Первый",),
@@ -117,7 +118,8 @@ class TaskPageTests(unittest.IsolatedAsyncioTestCase):
                 await self.click_button(page.task_panel.resume_button)
                 self.assertEqual(page.snapshot.task_state, state)
                 self.assertTrue(page.send_button.enabled)
-                self.assertTrue(page.task_panel.continue_button.enabled)
+                self.assertEqual(page.task_panel.continue_button.enabled, not state.awaiting_approval)
+                self.assertEqual(page.task_panel.approve_button.enabled, state.awaiting_approval)
                 self.assertEqual(page.user_input.value, "Сохранить при паузе")
 
     async def test_continue_uses_standard_submission_and_disables_controls_while_busy(self):
@@ -140,6 +142,7 @@ class TaskPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page.user_input.value, "")
         for control in (page.task_panel.start_button, page.task_panel.pause_button,
                         page.task_panel.resume_button, page.task_panel.continue_button,
+                        page.task_panel.approve_button,
                         page.task_panel.title_input, page.send_button):
             self.assertFalse(control.enabled)
         before = page.snapshot.task_state
@@ -147,6 +150,7 @@ class TaskPageTests(unittest.IsolatedAsyncioTestCase):
             page.task_panel.start()
             page.task_panel.pause()
             page.task_panel.resume()
+            page.task_panel.approve()
         self.assertEqual(self.service.get(self.conversation.id).task_state, before)
 
     async def test_continue_does_not_overwrite_unsent_message(self):
@@ -159,6 +163,78 @@ class TaskPageTests(unittest.IsolatedAsyncioTestCase):
         submit.assert_not_called()
         self.assertEqual(page.user_input.value, "Важное уточнение")
         self.assertEqual(self.notify.call_args.kwargs["type"], "warning")
+
+    async def test_proposed_plan_requires_approval_and_allows_chat_edits(self):
+        proposed = TaskState("Доклад", plan=("Введение", "Примеры"))
+        self.save_task(proposed)
+        with self.client:
+            page = self.build_page()
+        panel = page.task_panel
+        self.assertTrue(panel.approve_button.visible)
+        self.assertTrue(panel.approve_button.enabled)
+        self.assertFalse(panel.continue_button.enabled)
+        self.assertTrue(page.send_button.enabled)
+        self.assertIn("План ожидает утверждения", panel.status.text)
+        self.assertIn("1. Введение", self.labels(panel.details))
+        with self.client, patch.object(self.runner, "submit") as submit:
+            page.continue_task()
+        submit.assert_not_called()
+        self.notify.assert_called_with("Сначала утвердите план или отправьте правки в чат.", type="warning")
+        self.assertEqual(page.snapshot.task_state, proposed)
+        with self.client, patch.object(self.runner, "submit") as submit:
+            page.user_input.set_value("Добавь раздел с ограничениями")
+            page.send()
+        submit.assert_called_once()
+        self.assertEqual(submit.call_args.args[1], "Добавь раздел с ограничениями")
+
+    async def test_approve_plan_without_api_preserves_draft_and_survives_reload(self):
+        proposed = TaskState("Доклад", plan=("Введение", "Примеры"))
+        self.save_task(proposed)
+        with self.client:
+            page = self.build_page(token_available=False)
+            page.user_input.set_value("Сохранить черновик")
+        panel = page.task_panel
+        self.assertTrue(panel.approve_button.enabled)
+        with patch.object(self.runner, "submit") as submit, patch.object(
+            self.service, "approve_task_plan", wraps=self.service.approve_task_plan,
+        ) as approve:
+            await self.click_button(panel.approve_button)
+        submit.assert_not_called()
+        approve.assert_called_once_with(self.conversation.id, expected_plan=proposed.plan)
+        self.assertEqual(page.snapshot.task_state, proposed.approve_plan())
+        self.assertEqual(ConversationService(self.directory, token="").get(self.conversation.id).task_state,
+                         proposed.approve_plan())
+        self.assertFalse(panel.approve_button.visible)
+        self.assertFalse(panel.continue_button.enabled)
+        self.assertEqual(page.user_input.value, "Сохранить черновик")
+        self.assertEqual(page.snapshot.turns, [])
+
+    async def test_approval_is_blocked_during_pause_and_busy_request(self):
+        proposed = TaskState("Доклад", plan=("Подготовить текст",))
+        self.save_task(proposed.pause())
+        with self.client:
+            page = self.build_page()
+            self.assertFalse(page.task_panel.approve_button.enabled)
+            page.task_panel.approve()
+        self.assertEqual(self.service.get(self.conversation.id).task_state, proposed.pause())
+        await self.click_button(page.task_panel.resume_button)
+        self.runner._tasks[self.conversation.id] = Mock()
+        with self.client:
+            page.refresh()
+            self.assertFalse(page.task_panel.approve_button.enabled)
+            page.task_panel.approve()
+        self.assertEqual(self.service.get(self.conversation.id).task_state, proposed)
+
+    async def test_failed_approval_keeps_plan_available_for_retry(self):
+        proposed = TaskState("Доклад", plan=("Подготовить текст",))
+        self.save_task(proposed)
+        with self.client:
+            page = self.build_page()
+            with patch.object(self.service, "approve_task_plan", side_effect=ConversationStorageError("Детали")):
+                page.task_panel.approve()
+        self.notify.assert_called_with("Не удалось сохранить состояние задачи.", type="negative")
+        self.assertEqual(page.snapshot.task_state, proposed)
+        self.assertTrue(page.task_panel.approve_button.enabled)
 
     async def test_progress_refresh_shows_plan_results_and_preserves_message_draft(self):
         self.service.start_task(self.conversation.id, "План урока")

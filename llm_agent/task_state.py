@@ -42,7 +42,7 @@ ACTION_DESCRIPTIONS = {
 }
 ACTION_INSTRUCTIONS = {
     "clarify": "задать необходимый вопрос; этап, план и текущий шаг сохраняются",
-    "plan": "предложить план, добавив поле plan: непустой список шагов; приложение сохранит его и перейдёт к выполнению",
+    "plan": "предложить или исправить план, добавив поле plan: непустой список шагов; приложение сохранит его в planning до утверждения пользователем",
     "complete_step": "вернуть результат только текущего пункта; приложение отметит его выполненным",
     "replan": "объяснить необходимость перепланирования; приложение вернёт задачу в planning, новый план будет отдельным ходом",
     "revise": "указать замечания и вернуть последний пункт на доработку",
@@ -51,10 +51,13 @@ ACTION_INSTRUCTIONS = {
 STAGE_INSTRUCTIONS = {
     TaskStage.PLANNING: (
         "Сначала используй уже полученные уточнения. Не спрашивай повторно известные данные "
-        "и не включай завершённые уточнения как будущие шаги плана."
+        "и не включай завершённые уточнения как будущие шаги плана. Не выполняй пункты плана. "
+        "После предложения плана попроси пользователя утвердить его кнопкой «Утвердить план» "
+        "или командой --task-approve; правки можно отправить обычным сообщением. "
+        "Согласие в чате само по себе не меняет этап: утверждение выполняет только приложение."
     ),
     TaskStage.EXECUTION: (
-        "План уже сохранён и принят приложением. Повторно предлагать или согласовывать его "
+        "План уже сохранён и утверждён. Повторно предлагать или согласовывать его "
         "не нужно: выполни текущий пункт. Если пункт фиксирует уже согласованный выбор "
         "(например язык), кратко зафиксируй результат через complete_step. Уточнение пользователя "
         "не возвращает задачу в planning. Если выполнение требует изменения плана, используй "
@@ -67,6 +70,10 @@ STAGE_INSTRUCTIONS = {
     TaskStage.DONE: "Задача завершена, дальнейшие действия автомата недопустимы.",
 }
 CONTINUE_TASK = "Продолжи текущую задачу с сохранённого шага."
+PLAN_APPROVAL_REQUIRED = (
+    "План ожидает утверждения. Нажмите «Утвердить план» или используйте --task-approve. "
+    "Для изменения плана отправьте правки обычным сообщением."
+)
 
 
 class TaskResponseError(TaskStateError):
@@ -126,7 +133,7 @@ class TaskState:
         ):
             raise TaskStateError("Некорректное состояние задачи")
         if self.stage == TaskStage.PLANNING:
-            valid = not self.plan and self.step == 0 and not self.validation
+            valid = self.step == 0 and not self.validation
         elif self.stage == TaskStage.EXECUTION:
             valid = bool(self.plan) and self.step < len(self.plan) and not self.validation
         else:
@@ -137,7 +144,13 @@ class TaskState:
             raise TaskStateError("Этап задачи не соответствует плану и выполненным шагам")
 
     @property
+    def awaiting_approval(self) -> bool:
+        return self.stage == TaskStage.PLANNING and bool(self.plan)
+
+    @property
     def current_step(self) -> str:
+        if self.awaiting_approval:
+            return "Утвердить предложенный план или внести правки"
         if self.stage == TaskStage.EXECUTION:
             return self.plan[self.step]
         return {
@@ -150,6 +163,8 @@ class TaskState:
     def expected_action(self) -> str:
         if self.paused:
             return "Снять паузу; этап и текущий шаг сохранены"
+        if self.awaiting_approval:
+            return PLAN_APPROVAL_REQUIRED
         return {
             TaskStage.PLANNING: "Уточнить требования или предложить план",
             TaskStage.EXECUTION: "Выполнить текущий пункт плана",
@@ -185,6 +200,13 @@ class TaskState:
     def resume(self) -> "TaskState":
         return replace(self, paused=False)
 
+    def approve_plan(self) -> "TaskState":
+        """Утвердить сохранённый план явной командой пользователя, без участия модели."""
+        self.require_active()
+        if not self.awaiting_approval:
+            raise TaskStateError("Утвердить можно только предложенный план на этапе planning.")
+        return self._transition(TaskStage.EXECUTION)
+
     def require_active(self) -> None:
         if self.paused:
             raise TaskStateError("Задача на паузе. Сначала возобновите её.")
@@ -192,8 +214,13 @@ class TaskState:
             raise TaskStateError("Задача уже завершена. Создайте новую задачу.")
 
     def _transition(self, target: TaskStage, **changes) -> "TaskState":
+        self.require_active()
         if target not in TRANSITIONS[self.stage]:
-            raise TaskStateError(f"Переход {self.stage.value} → {target.value} запрещён")
+            allowed = ", ".join(sorted(stage.value for stage in TRANSITIONS[self.stage])) or "нет"
+            raise TaskStateError(
+                f"Переход {self.stage.value} → {target.value} запрещён. "
+                f"Допустимые переходы: {allowed}. Этап и шаг сохранены."
+            )
         return replace(self, stage=target, **changes)
 
     def _parse_reply(self, content: str) -> dict:
@@ -240,6 +267,8 @@ class TaskState:
                 f"Действие {_quoted_name(action)} ({ACTION_DESCRIPTIONS[action]}) недопустимо на этом этапе."
                 if action in ACTION_DESCRIPTIONS else f"Неизвестное действие {_quoted_name(action)}."
             )
+            if self.awaiting_approval:
+                reason += " " + PLAN_APPROVAL_REQUIRED
             raise TaskResponseError(self, f"{reason} Допустимые действия: {allowed}.")
         action = data["action"]
         if action == "plan":
@@ -277,7 +306,7 @@ class TaskState:
         if action == "clarify":
             state = replace(state, notes=notes + ("Уточнение: " + answer,))
         elif action == "plan":
-            state = state._transition(TaskStage.EXECUTION, plan=tuple(data["plan"]))
+            state = replace(state, plan=tuple(data["plan"]))
         elif action == "complete_step":
             progress = {"step": state.step + 1, "results": state.results + (answer,)}
             state = (
@@ -306,6 +335,8 @@ class TaskState:
     def to_message(self) -> dict[str, str]:
         data = {**self.to_dict(), "current_step": self.current_step,
                 "expected_action": self.expected_action,
+                "awaiting_approval": self.awaiting_approval,
+                "allowed_transitions": sorted(stage.value for stage in TRANSITIONS[self.stage]),
                 "allowed_actions": list(STAGE_ACTIONS[self.stage])}
         actions = "\n".join(f"- {action}: {ACTION_INSTRUCTIONS[action]}." for action in STAGE_ACTIONS[self.stage])
         plan_field = (
@@ -334,6 +365,10 @@ class TaskState:
             "Пример только синтаксиса (действие и содержание выбери по текущему этапу): "
             + example + "\n"
             + STAGE_INSTRUCTIONS[self.stage] + "\n"
+            "Разрешённые переходы по графу: " + (", ".join(data["allowed_transitions"]) or "нет") + ". "
+            "planning → execution требует утверждения плана пользователем; "
+            "execution → validation требует результатов всех пунктов; "
+            "validation → done требует итога проверки. Не пропускай этапы.\n"
             "Допустимые действия: " + ", ".join(STAGE_ACTIONS[self.stage]) + ".\n"
             + actions + "\n" + plan_field + "Не возвращай stage/step: "
             "переход вычисляет приложение.\n<task_state>\n"

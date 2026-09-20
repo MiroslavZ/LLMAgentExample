@@ -57,6 +57,9 @@ class TaskPanel:
                 self.resume_button = ui.button(
                     "Возобновить", icon="play_arrow", on_click=self.resume,
                 ).props("outline no-caps").classes("w-full")
+                self.approve_button = ui.button(
+                    "Утвердить план", icon="check", on_click=self.approve,
+                ).props("unelevated no-caps").classes("w-full")
                 self.continue_button = ui.button(
                     "Продолжить шаг", icon="skip_next", on_click=self.continue_task,
                 ).props("unelevated no-caps").classes("w-full")
@@ -73,6 +76,7 @@ class TaskPanel:
         task = conversation.task_state
         active = task is not None and task.stage != "done"
         paused = bool(task and task.paused)
+        awaiting_approval = bool(task and task.awaiting_approval)
         busy = self.busy()
         self.new_task.set_visibility(not active)
         self.progress.set_visibility(task is not None)
@@ -80,10 +84,14 @@ class TaskPanel:
         self.start_button.set_enabled(not busy and not active)
         self.pause_button.set_visibility(task is not None and not paused)
         self.resume_button.set_visibility(paused)
+        self.approve_button.set_visibility(awaiting_approval)
         self.continue_button.set_visibility(active)
         self.pause_button.set_enabled(task is not None and not paused and not busy)
         self.resume_button.set_enabled(paused and not busy)
-        self.continue_button.set_enabled(active and not paused and not busy and self.token_available)
+        self.approve_button.set_enabled(awaiting_approval and not paused and not busy)
+        self.continue_button.set_enabled(
+            active and not awaiting_approval and not paused and not busy and self.token_available,
+        )
         if busy:
             self.status.set_text(
                 "Дождитесь ответа. После него можно поставить задачу на паузу." if active else
@@ -91,6 +99,8 @@ class TaskPanel:
             )
         elif paused:
             self.status.set_text("На паузе. Возобновите задачу, чтобы продолжить с сохранённого шага.")
+        elif awaiting_approval:
+            self.status.set_text("План ожидает утверждения. Проверьте пункты и утвердите план или отправьте правки в чат.")
         elif active:
             self.status.set_text("Каждая отправка выполняет один шаг. Прогресс сохраняется автоматически.")
         elif task:
@@ -110,7 +120,11 @@ class TaskPanel:
         self.details.clear()
         with self.details:
             if task.plan:
-                with ui.expansion(f"План · выполнено {task.step} из {len(task.plan)}").classes("w-full"):
+                plan_title = (
+                    "План · ожидает утверждения" if awaiting_approval else
+                    f"План · выполнено {task.step} из {len(task.plan)}"
+                )
+                with ui.expansion(plan_title, value=awaiting_approval).classes("w-full"):
                     for index, step in enumerate(task.plan):
                         prefix = "✓" if index < task.step else str(index + 1) + "."
                         ui.label(f"{prefix} {step}").classes("memory-value")
@@ -152,3 +166,12 @@ class TaskPanel:
 
     def resume(self) -> None:
         self.change(self.service.resume_task)
+
+    def approve(self) -> None:
+        conversation = self.snapshot()
+        if conversation is None or conversation.task_state is None:
+            return
+        plan = conversation.task_state.plan
+        self.change(lambda conversation_id: self.service.approve_task_plan(
+            conversation_id, expected_plan=plan,
+        ))

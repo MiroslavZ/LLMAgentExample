@@ -29,6 +29,7 @@ def reply(action, answer="Результат", **values):
 def stages():
     planning = TaskState("Написать функцию сложения")
     _, execution = planning.apply_reply("Только Python", payload("plan", plan=["Реализовать", "Привести примеры"]))
+    execution = execution.approve_plan()
     _, second_step = execution.apply_reply(CONTINUE_TASK, payload("complete_step", "def add(a, b): return a + b"))
     _, validation = second_step.apply_reply(CONTINUE_TASK, payload("complete_step", "add(2, 3) == 5"))
     _, done = validation.apply_reply(CONTINUE_TASK, payload("finish", "Код проверен чтением, запуск не выполнялся"))
@@ -65,6 +66,7 @@ class TaskStateTests(unittest.TestCase):
         self.assertEqual(state.stage, TaskStage.PLANNING)
         self.assertEqual(len(state.notes), 2)
         _, state = state.apply_reply("HTTP", payload("plan", plan=["Сделать API"]))
+        state = state.approve_plan()
         _, state = state.apply_reply(CONTINUE_TASK, payload("complete_step", "Вариант 1"))
         _, state = state.apply_reply(CONTINUE_TASK, payload("revise", "Не хватает обработки ошибок"))
         self.assertEqual(state.stage, TaskStage.EXECUTION)
@@ -165,6 +167,7 @@ class TaskIntegrationTests(unittest.TestCase):
         history.start_task("Написать функцию сложения")
         self.create.return_value = reply("plan", plan=["Реализовать", "Примеры"])
         self.agent(strategy="window", window_size=1).request("Только Python")
+        HistoryManager(self.path).approve_task_plan()
         self.create.return_value = reply("complete_step", "def add(a, b): return a + b")
         self.agent(strategy="window", window_size=1).request(CONTINUE_TASK)
         HistoryManager(self.path).pause_task()
@@ -213,7 +216,7 @@ class TaskIntegrationTests(unittest.TestCase):
                 main_prompt = json.dumps(calls[1].kwargs["messages"], ensure_ascii=False)
                 for value in ("<task_state>", "Кратко", "без зависимостей"):
                     self.assertIn(value, main_prompt)
-                self.assertEqual(HistoryManager(self.path).task_state.stage, TaskStage.EXECUTION)
+                self.assertTrue(HistoryManager(self.path).task_state.awaiting_approval)
 
     def test_api_error_invalid_json_or_truncation_does_not_advance_or_save_answer(self):
         HistoryManager(self.path).start_task("Задача")
@@ -311,7 +314,7 @@ class TaskServiceTests(unittest.TestCase):
                 self.assertEqual(restored.turns[-1].error, failed.turns[-1].error)
         self.create.return_value = reply("plan", plan=["Первый шаг"])
         completed = self.service.send(cid, CONTINUE_TASK)
-        self.assertEqual(completed.task_state.stage, TaskStage.EXECUTION)
+        self.assertTrue(completed.task_state.awaiting_approval)
         self.assertEqual(completed.task_state.step, 0)
         self.assertEqual(completed.turns[-1].status, "completed")
 
@@ -365,6 +368,8 @@ class TaskServiceTests(unittest.TestCase):
                     snapshot = self.service.send(cid, CONTINUE_TASK)
                     self.assertEqual(snapshot.turns[-1].status, "completed")
                     self.assertNotIn('"action"', snapshot.turns[-1].answer)
+                    if snapshot.task_state.awaiting_approval:
+                        self.service.approve_task_plan(cid)
         self.assertEqual(len(self.service.get(cid).turns), 3)
 
     def test_request_failure_and_restart_preserve_checkpoint(self):
@@ -409,10 +414,10 @@ class TaskServiceTests(unittest.TestCase):
         with patch.object(self.service.store, "save", side_effect=capture):
             self.service.send(cid, CONTINUE_TASK)
         for snapshot in saved:
-            if snapshot.task_state.stage == TaskStage.EXECUTION:
+            if snapshot.task_state.awaiting_approval:
                 self.assertEqual(snapshot.turns[-1].answer, "План готов")
                 self.assertEqual(snapshot.turns[-1].status, "completed")
-        self.assertEqual(saved[-1].task_state.stage, TaskStage.EXECUTION)
+        self.assertTrue(saved[-1].task_state.awaiting_approval)
 
     def test_corrupt_state_is_reported_without_overwriting_file(self):
         cid = self.conversation.id

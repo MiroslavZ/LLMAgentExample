@@ -25,7 +25,7 @@ from .models import ContextSettings, Conversation, RequestOptions, Turn, utc_now
 from .memory import MemorySnapshot, MemoryStorageError, MemoryStore
 from .profile import ProfileStorageError, ProfileStore, UserProfile
 from .storage import ConversationBusyError, ConversationStorageError, ConversationStore
-from .task_state import TaskStage, TaskState, TaskStateError
+from .task_state import CONTINUE_TASK, PLAN_APPROVAL_REQUIRED, TaskStage, TaskState, TaskStateError
 
 
 class _ConversationHistory(HistoryManager):
@@ -258,11 +258,18 @@ class ConversationService:
                 raise ValueError("Правила уже изменены. Откройте редактор заново и внесите правки в актуальный набор.")
             self.invariants.save(invariants)
 
-    def _task_operation(self, conversation_id: str, action: str, title: str | None = None) -> Conversation:
+    def _task_operation(
+        self, conversation_id: str, action: str, title: str | None = None, *,
+        expected_plan: tuple[str, ...] | None = None,
+    ) -> Conversation:
         with self._operation(conversation_id):
             conversation = self.get(conversation_id)
             if conversation.busy:
                 raise ConversationBusyError("Дождитесь завершения запроса перед изменением задачи")
+            if expected_plan is not None and (
+                conversation.task_state is None or conversation.task_state.plan != expected_plan
+            ):
+                raise TaskStateError("План уже изменился. Просмотрите актуальный план перед утверждением.")
             history = _ConversationHistory(self.store, conversation, time.perf_counter())
             if action == "start":
                 history.start_task(title)
@@ -270,6 +277,8 @@ class ConversationService:
                 history.pause_task()
             elif action == "resume":
                 history.resume_task()
+            elif action == "approve":
+                history.approve_task_plan()
             with self._state_lock:
                 self._unsaved.pop(conversation_id, None)
             return deepcopy(history.conversation)
@@ -282,6 +291,11 @@ class ConversationService:
 
     def resume_task(self, conversation_id: str) -> Conversation:
         return self._task_operation(conversation_id, "resume")
+
+    def approve_task_plan(
+        self, conversation_id: str, *, expected_plan: tuple[str, ...] | None = None,
+    ) -> Conversation:
+        return self._task_operation(conversation_id, "approve", expected_plan=expected_plan)
 
     def get_profile(self, conversation_id: str) -> UserProfile | None:
         self.get(conversation_id)
@@ -415,6 +429,8 @@ class ConversationService:
             if task is not None:
                 if task.paused:
                     raise TaskStateError("Задача на паузе. Сначала возобновите её.")
+                if task.awaiting_approval and user.strip() == CONTINUE_TASK:
+                    raise TaskStateError(PLAN_APPROVAL_REQUIRED)
                 if task.stage != TaskStage.DONE and options.meta_prompt:
                     raise TaskStateError("Отключите мета-промпт для работы с активной задачей")
             if settings is not None:

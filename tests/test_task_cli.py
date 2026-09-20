@@ -11,7 +11,7 @@ from rich.console import Console
 from llm_agent.branch_history import BranchHistoryManager
 from llm_agent.cli import main, parse_args, run
 from llm_agent.history import HistoryManager
-from llm_agent.task_state import CONTINUE_TASK, TaskStage
+from llm_agent.task_state import CONTINUE_TASK, TaskStage, TaskState
 from tests.helpers import completion
 
 
@@ -85,7 +85,8 @@ class TaskCliTests(unittest.TestCase):
             output = self.run_cli("--task-start", "Доклад", "--user", "Для начинающих")
         self.create.assert_called_once()
         state = self.state()
-        self.assertEqual(state.stage, TaskStage.EXECUTION)
+        self.assertEqual(state.stage, TaskStage.PLANNING)
+        self.assertTrue(state.awaiting_approval)
         self.assertEqual(state.step, 0)
         self.assertIn("План готов", output)
         self.assertIn(state.current_step, output)
@@ -121,6 +122,15 @@ class TaskCliTests(unittest.TestCase):
                         sent = self.create.call_args.kwargs["messages"]
                         self.assertEqual(sent[-1]["content"], CONTINUE_TASK)
                         self.assertIn(before.title, json.dumps(sent, ensure_ascii=False))
+                        if action == "plan":
+                            proposed = self.state()
+                            self.assertTrue(proposed.awaiting_approval)
+                            self.run_cli("--task-pause")
+                            self.assertEqual(self.state(), proposed.pause())
+                            self.run_cli("--task-resume")
+                            self.assertEqual(self.state(), proposed)
+                            self.run_cli("--task-approve")
+                            self.assertEqual(self.create.call_count, calls + 1)
         self.assertEqual(self.state().results, (replies[1][1],))
         self.assertEqual(self.state().notes, ())
 
@@ -130,7 +140,8 @@ class TaskCliTests(unittest.TestCase):
         self.reply("plan", "План с учётом уточнения", plan=["Подготовить текст"])
         with patch.dict("os.environ", {"API_KEY": "test"}):
             self.run_cli("--task-resume", "--user", "Не больше пяти минут")
-        self.assertEqual(self.state().stage, TaskStage.EXECUTION)
+        self.assertEqual(self.state().stage, TaskStage.PLANNING)
+        self.assertTrue(self.state().awaiting_approval)
         self.assertFalse(self.state().paused)
         self.assertIn("Пользователь: Не больше пяти минут", self.state().notes)
         self.create.assert_called_once()
@@ -161,12 +172,63 @@ class TaskCliTests(unittest.TestCase):
             ):
                 self.reply(action, **data)
                 self.run_cli("--task-continue")
+                if action == "plan":
+                    self.run_cli("--task-approve")
         self.create.reset_mock()
         self.load_env.reset_mock()
         with self.assertRaisesRegex(SystemExit, "завершена"):
             self.run_cli("--task-continue", entrypoint=run)
         self.create.assert_not_called()
         self.load_env.assert_not_called()
+
+    def test_plan_approval_is_local_and_survives_restart(self):
+        proposed = TaskState("Доклад", plan=("Подготовить текст",))
+        HistoryManager(self.history).add_exchange("Цель", "Предлагаю план", None, task_state=proposed)
+        with patch.dict("os.environ", {}, clear=True):
+            self.run_cli("--task-approve")
+        self.assertEqual(self.state(), proposed.approve_plan())
+        self.assertFalse(self.memory_db.exists())
+        self.assertFalse(self.profiles_db.exists())
+        self.load_env.assert_not_called()
+        self.client.assert_not_called()
+
+    def test_continue_requires_approval_without_sending_request(self):
+        proposed = TaskState("Доклад", plan=("Подготовить текст",))
+        history = HistoryManager(self.history)
+        history.add_exchange("Цель", "Предлагаю план", None, task_state=proposed)
+        before = self.history.read_bytes()
+        with self.assertRaisesRegex(SystemExit, "--task-approve"):
+            self.run_cli("--task-continue", entrypoint=run)
+        self.assertEqual(self.history.read_bytes(), before)
+        self.load_env.assert_not_called()
+        self.client.assert_not_called()
+
+    def test_approve_with_user_runs_first_step_after_explicit_approval(self):
+        proposed = TaskState("Доклад", plan=("Подготовить текст",))
+        HistoryManager(self.history).add_exchange("Цель", "Предлагаю план", None, task_state=proposed)
+        self.reply("complete_step", "Готовый текст")
+        with patch.dict("os.environ", {"API_KEY": "test"}):
+            self.run_cli("--task-approve", "--user", "Используй короткие предложения")
+        self.assertEqual(self.state().stage, TaskStage.VALIDATION)
+        self.assertEqual(self.state().results, ("Готовый текст",))
+        self.create.assert_called_once()
+        prompt = json.dumps(self.create.call_args.kwargs["messages"], ensure_ascii=False)
+        self.assertIn('\\"stage\\": \\"execution\\"', prompt)
+
+    def test_approve_missing_plan_paused_or_approved_task_preserves_state(self):
+        proposed = TaskState("Доклад", plan=("Подготовить текст",))
+        for state in (None, TaskState("Доклад"), proposed.pause(), proposed.approve_plan()):
+            with self.subTest(state=state):
+                history = HistoryManager(self.history)
+                history.clear()
+                if state is not None:
+                    history.add_exchange("Цель", "Ответ", None, task_state=state)
+                before = self.history.read_bytes()
+                with self.assertRaises(SystemExit):
+                    self.run_cli("--task-approve", entrypoint=run)
+                self.assertEqual(self.history.read_bytes(), before)
+        self.load_env.assert_not_called()
+        self.client.assert_not_called()
 
     def test_branch_checkpoint_contains_new_task_and_pause_is_local(self):
         self.run_cli("--strategy", "branch", "--task-start", "Доклад", "--checkpoint", "start")
@@ -181,6 +243,22 @@ class TaskCliTests(unittest.TestCase):
         self.assertFalse(self.memory_db.exists())
         self.assertFalse(self.profiles_db.exists())
         self.client.assert_not_called()
+
+    def test_approval_affects_only_current_branch_and_is_saved_in_checkpoint(self):
+        proposed = TaskState("Доклад", plan=("Подготовить текст",))
+        history = BranchHistoryManager(self.history)
+        history.add_exchange("Цель", "Предлагаю план", None, task_state=proposed)
+        history.create_checkpoint("proposal")
+        self.run_cli("--strategy", "branch", "--create-branch", "alternative", "--from-checkpoint", "proposal")
+        self.run_cli("--strategy", "branch", "--task-approve", "--checkpoint", "approved")
+        restored = BranchHistoryManager(self.history)
+        self.assertEqual(restored.task_state, proposed.approve_plan())
+        restored.switch_branch("main")
+        self.assertEqual(restored.task_state, proposed)
+        restored.create_branch("from-approved", from_checkpoint="approved")
+        self.assertEqual(restored.task_state, proposed.approve_plan())
+        self.client.assert_not_called()
+        self.load_env.assert_not_called()
 
     def test_show_remains_json_when_combined_with_other_local_edits(self):
         self.run_cli("--task-start", "Доклад")
@@ -216,6 +294,8 @@ class TaskCliTests(unittest.TestCase):
             ["--task-show", "--user", "Запрос"],
             ["--task-continue", "--user", "Запрос"],
             ["--task-resume", "--task-continue"],
+            ["--task-approve", "--task-continue"],
+            ["--task-approve", "--task-pause"],
             ["--task-show", "--memory-show"],
             ["--task-show", "--profile-show"],
             ["--task-show", "--profile-list"],

@@ -14,6 +14,7 @@ from ..task_state import CONTINUE_TASK
 from .components import STRATEGIES, STRATEGY_HELP, empty_chat, render_turn
 from .jobs import RequestRunner
 from .invariants import InvariantPanel
+from .mcp import MCPPanel
 from .profiles import ProfilePanel
 from .tasks import TaskPanel
 
@@ -60,6 +61,7 @@ class ChatPage:
         self._memory_controls: list = []
         self.memory_editors: dict[str, MemoryEditor] = {}
         self.invariant_panel = InvariantPanel(service, on_save=self.refresh)
+        self.mcp_panel = MCPPanel(service.mcp_servers)
         self.profile_panel = ProfilePanel(
             service, conversation_id=lambda: self.conversation_id, busy=lambda: self.busy,
         )
@@ -110,6 +112,9 @@ class ChatPage:
                     ui.button(icon="memory", on_click=self.open_memory).props(
                         'flat round aria-label="Память агента"'
                     ).tooltip("Память агента")
+                    ui.button("MCP", icon="hub", on_click=self.mcp_panel.open).props(
+                        'flat no-caps aria-label="MCP-серверы"'
+                    ).tooltip("MCP-серверы")
                     ui.button(icon="tune", on_click=lambda: self.settings_panel.classes(add="panel-open")).props(
                         'flat round aria-label="Открыть настройки диалога"'
                     ).classes("mobile-settings")
@@ -117,6 +122,7 @@ class ChatPage:
                 with ui.scroll_area(on_scroll=self.on_scroll).classes("message-scroll") as self.scroll:
                     self.transcript = ui.column().classes("transcript")
                 self.composer = ui.column().classes("composer-area")
+                self.mcp_panel.build()
 
             with ui.element("aside").classes("settings-panel") as self.settings_panel:
                 with ui.row().classes("settings-heading"):

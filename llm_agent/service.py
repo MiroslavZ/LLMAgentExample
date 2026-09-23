@@ -23,6 +23,7 @@ from .history import HistoryManager, TokenUsage
 from .invariants import InvariantSet, InvariantStorageError, InvariantStore
 from .models import ContextSettings, Conversation, RequestOptions, Turn, utc_now
 from .memory import MemorySnapshot, MemoryStorageError, MemoryStore
+from .mcp_config import MCPServerStore
 from .profile import ProfileStorageError, ProfileStore, UserProfile
 from .storage import ConversationBusyError, ConversationStorageError, ConversationStore
 from .task_state import CONTINUE_TASK, PLAN_APPROVAL_REQUIRED, TaskStage, TaskState, TaskStateError
@@ -147,6 +148,7 @@ class ConversationService:
         self.store = ConversationStore(data_dir)
         self.memory = MemoryStore(self.store.data_dir / "memory.sqlite3")
         self.profiles = ProfileStore(self.store.data_dir / "profiles.sqlite3")
+        self.mcp_servers = MCPServerStore(self.store.data_dir / "mcp.sqlite3")
         self.invariants_path = Path(invariants_path) if invariants_path is not None else self.store.data_dir.parent / "invariants.json"
         self.invariants = InvariantStore(self.invariants_path)
         self._token = token

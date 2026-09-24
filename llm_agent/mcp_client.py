@@ -1,11 +1,12 @@
-"""Подключение к MCP по Streamable HTTP и получение каталога инструментов."""
+"""Каталог и вызовы MCP-инструментов через Streamable HTTP."""
 
 import argparse
 import asyncio
 import json
 import math
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,12 +38,11 @@ def _causes(error: BaseException) -> Iterator[BaseException]:
             yield from _causes(nested)
 
 
-async def get_tools(server: MCPServer, *, timeout: float = 30) -> MCPDiscovery:
-    """Одна сессия: initialize → tools/list (все страницы) → закрытие.
-
-    SDK 2.x использует httpx2, snake_case-модели и пару потоков транспорта.
-    Общий таймаут ограничивает также инициализацию и пагинацию.
-    """
+@asynccontextmanager
+async def _session(
+    server: MCPServer, *, timeout: float,
+) -> AsyncIterator[tuple[ClientSession, types.InitializeResult]]:
+    """Общие авторизация, initialize, таймаут и безопасные ошибки SDK 2.x."""
     server.validate()
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("Таймаут MCP должен быть положительным конечным числом")
@@ -70,31 +70,16 @@ async def get_tools(server: MCPServer, *, timeout: float = 30) -> MCPDiscovery:
             async with httpx2.AsyncClient(
                 headers=headers, timeout=httpx2.Timeout(timeout, connect=min(timeout, 10)),
                 follow_redirects=False, event_hooks={"response": [record_status]},
+                # Loopback должен оставаться локальным и при включённом прокси
+                # в окружении или настройках Windows. Для VPS сохраняем прокси/TLS.
+                mounts={"all://localhost": None, "all://127.0.0.1": None, "all://[::1]": None},
             ) as http_client:
                 async with streamable_http_client(server.url, http_client=http_client) as (read, write):
                     async with ClientSession(read, write, read_timeout_seconds=timeout) as session:
                         initialized = await session.initialize()
                         if initialized.capabilities.tools is None:
                             raise MCPConnectionError("Соединение установлено, но сервер не поддерживает инструменты MCP.")
-                        tools: list[Tool] = []
-                        cursor: str | None = None
-                        seen_cursors: set[str] = set()
-                        while True:
-                            page = await session.list_tools(
-                                params=types.PaginatedRequestParams(cursor=cursor) if cursor is not None else None,
-                            )
-                            tools.extend(page.tools)
-                            cursor = page.next_cursor
-                            if cursor is None:
-                                break
-                            if cursor in seen_cursors:
-                                raise MCPConnectionError("Сервер повторил курсор списка инструментов. Попробуйте позже.")
-                            seen_cursors.add(cursor)
-                        result = MCPDiscovery(
-                            initialized.server_info.name, initialized.server_info.version,
-                            initialized.protocol_version, tuple(tools),
-                        )
-            return result
+                        yield session, initialized
     except Exception as error:
         # Не показываем str(error) от SDK: ответ сервера может содержать секреты.
         causes = tuple(_causes(error))
@@ -112,8 +97,45 @@ async def get_tools(server: MCPServer, *, timeout: float = 30) -> MCPDiscovery:
         elif any(isinstance(cause, (httpx2.NetworkError, OSError)) for cause in causes):
             message = "Не удалось подключиться к MCP-серверу. Проверьте адрес и сеть."
         else:
-            message = "Не удалось получить инструменты MCP. Проверьте поддержку Streamable HTTP и настройки сервера."
+            message = "Не удалось выполнить запрос MCP. Проверьте поддержку Streamable HTTP и настройки сервера."
         raise MCPConnectionError(message) from None
+
+
+async def get_tools(server: MCPServer, *, timeout: float = 30) -> MCPDiscovery:
+    """initialize → tools/list (все страницы) → закрытие; общий таймаут 30 с."""
+    async with _session(server, timeout=timeout) as (session, initialized):
+        tools: list[Tool] = []
+        cursor: str | None = None
+        seen_cursors: set[str] = set()
+        while True:
+            page = await session.list_tools(
+                params=types.PaginatedRequestParams(cursor=cursor) if cursor is not None else None,
+            )
+            tools.extend(page.tools)
+            cursor = page.next_cursor
+            if cursor is None:
+                break
+            if cursor in seen_cursors:
+                raise MCPConnectionError("Сервер повторил курсор списка инструментов. Попробуйте позже.")
+            seen_cursors.add(cursor)
+        return MCPDiscovery(
+            initialized.server_info.name, initialized.server_info.version,
+            initialized.protocol_version, tuple(tools),
+        )
+
+
+async def call_tool(
+    server: MCPServer, name: str, arguments: dict, *, timeout: float = 30,
+) -> types.CallToolResult:
+    """Один вызов в новой сессии без автоматического повтора операции.
+
+    Ошибки инструмента (is_error) возвращаются как данные; ошибки транспорта
+    становятся MCPConnectionError. SDK проверяет объявленную outputSchema.
+    """
+    if not isinstance(name, str) or not name or not isinstance(arguments, dict):
+        raise ValueError("Для MCP-вызова требуются имя инструмента и объект аргументов")
+    async with _session(server, timeout=timeout) as (session, _):
+        return await session.call_tool(name, arguments, read_timeout_seconds=timeout)
 
 
 def main() -> int:

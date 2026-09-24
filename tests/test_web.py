@@ -13,6 +13,8 @@ from nicegui.elements.timer import Timer
 
 from llm_agent.models import ContextSettings, Turn
 from llm_agent.service import ConversationService, ConversationStorageError
+from llm_agent.tool_events import ToolCallRecord
+from llm_agent.web.components import render_turn
 from llm_agent.web.jobs import RequestRunner
 from llm_agent.web.page import ChatPage
 
@@ -270,6 +272,28 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page.drafts[self.conversation.id].user, page.user_input.value)
         self.assertFalse(self.service.get(self.conversation.id).started)
         self.notify.assert_called_once()
+
+    async def test_running_turn_displays_collapsed_tool_results_as_literal_text(self):
+        result = 'Результат\n```\n<strong>Обычный текст</strong>\n```\nКонец'
+        calls = [
+            ToolCallRecord("call_1", "GitHub", "get_issue", '{"number": 17}', result, False, 0.2),
+            ToolCallRecord("call_2", "GitHub", "get_issue", "invalid JSON", "Ошибка параметров", True, 0.1),
+        ]
+        with self.client, ui.column() as transcript:
+            render_turn(Turn(user="Найди задачу", tool_calls=calls), restore=lambda: None, busy=True)
+        expansions = [element for element in transcript.descendants() if isinstance(element, ui.expansion)]
+        self.assertEqual([element.text for element in expansions], [
+            "GitHub · get_issue · Успешно", "GitHub · get_issue · Ошибка",
+        ])
+        self.assertTrue(all(not element.value for element in expansions))
+        blocks = [element for element in transcript.descendants() if isinstance(element, ui.code)]
+        self.assertEqual([element.content for element in blocks], [
+            calls[0].arguments, result, calls[1].arguments, calls[1].result,
+        ])
+        html = blocks[1].markdown._props["innerHTML"]
+        self.assertIn("&lt;strong&gt;", html)
+        self.assertNotIn("<strong>", html)
+        self.assertIn("Агент готовит ответ…", self.labels(transcript))
 
 
 if __name__ == "__main__":

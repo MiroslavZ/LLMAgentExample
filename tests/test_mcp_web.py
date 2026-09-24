@@ -12,7 +12,7 @@ from mcp import Tool
 from nicegui import Client, core, ui
 
 from llm_agent.mcp_client import MCPConnectionError, MCPDiscovery
-from llm_agent.mcp_config import GITHUB_MCP_URL, GITHUB_TOKEN_ENV, MCPServer
+from llm_agent.mcp_config import GITHUB_MCP_URL, GITHUB_TOKEN_ENV, LOCAL_GITHUB_MCP_URL, MCPServer
 from llm_agent.service import ConversationService
 from llm_agent.web.jobs import RequestRunner
 from llm_agent.web.page import ChatPage
@@ -68,18 +68,26 @@ class MCPPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.panel.dialog.value)
         self.assertFalse(self.panel.tools_button.enabled)
         await self.click(self.panel.new_button)
-        self.assertEqual(self.panel.url_input.value, GITHUB_MCP_URL)
-        self.assertEqual(self.panel.token_input.value, GITHUB_TOKEN_ENV)
+        self.assertEqual(self.panel.url_input.value, LOCAL_GITHUB_MCP_URL)
+        self.assertEqual(self.panel.token_input.value, "")
+        self.assertFalse(self.panel.enabled_input.value)
         await self.click(self.panel.save_button)
         saved, = self.service.mcp_servers.list()
         self.assertEqual(saved.name, "GitHub")
+        self.assertFalse(saved.enabled)
+        self.assertIn("Выключен в чате", self.panel.address.text)
         self.assertEqual(self.panel.selector.value, saved.id)
         self.assertTrue(self.panel.tools_button.enabled)
         await self.click(self.panel.edit_button)
         self.panel.name_input.set_value("GitHub рабочий")
+        self.panel.enabled_input.set_value(True)
         await self.click(self.panel.save_button)
         reopened = ConversationService(self.service.store.data_dir, token=None)
         self.assertEqual(reopened.mcp_servers.get(saved.id).name, "GitHub рабочий")
+        self.assertTrue(reopened.mcp_servers.get(saved.id).enabled)
+        self.assertIn("Включён в чате", self.panel.address.text)
+        await self.click(self.panel.edit_button)
+        self.assertTrue(self.panel.enabled_input.value)
         await self.click(self.panel.delete_button)
         self.assertEqual(reopened.mcp_servers.list(), [])
         self.assertFalse(self.panel.tools_button.enabled)
@@ -131,6 +139,7 @@ class MCPPageTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(started.wait(), 1)
             self.assertFalse(self.panel.tools_button.enabled)
             self.assertFalse(self.panel.selector.enabled)
+            self.assertFalse(self.panel.enabled_input.enabled)
             await self.panel.discover()
             self.assertEqual(discover.call_count, 1)
             self.panel.cancel_request()

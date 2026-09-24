@@ -26,6 +26,10 @@ from .memory import (
 )
 from .profile import ProfileStorageError, ProfileStore, UserProfile
 from .task_state import CONTINUE_TASK
+from .mcp_config import MCPServer
+from .mcp_client import MCPConnectionError
+from .mcp_tools import MCPToolError
+from .tool_events import ToolCallRecord
 
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
@@ -68,6 +72,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--system", help="Системный промпт диалога (сохраняется, если ещё не задан)")
     parser.add_argument("--user", help="Текст запроса; необязателен для управления ветками, памятью, профилями, задачей и инвариантами")
+    parser.add_argument("--mcp-url", help="URL MCP-сервера, инструменты которого модель может вызывать")
+    parser.add_argument("--mcp-token-env", default="", help="Имя переменной с MCP Bearer-токеном (не сам токен)")
     task_action = parser.add_mutually_exclusive_group()
     task_action.add_argument(
         "--task-start", metavar="TITLE",
@@ -555,8 +561,20 @@ def apply_profile_options(
     return profile
 
 
+def print_tool_call(record: ToolCallRecord) -> None:
+    status = "ошибка" if record.is_error else "результат получен"
+    console.print(Panel(
+        Syntax(json.dumps({"arguments": record.arguments, "result": json.loads(record.result)},
+                          ensure_ascii=False, indent=2), "json", word_wrap=True),
+        title=Text(f"MCP · {record.server_name} / {record.tool_name} · {status}"),
+    ))
+
+
 def main() -> None:
     args = parse_args()
+    if args.mcp_token_env and not args.mcp_url:
+        raise ValueError("--mcp-token-env требует --mcp-url")
+    mcp_servers = (MCPServer("cli", "MCP", args.mcp_url, args.mcp_token_env, enabled=True),) if args.mcp_url else ()
     invariant_store = InvariantStore(args.invariants_file)
     if args.invariants_import is not None:
         try:
@@ -642,7 +660,15 @@ def main() -> None:
         on_compression=print_compression,
         strategy=args.strategy, window_size=args.window_size,
         memory=memory, profile=profile, invariants=invariants,
+        mcp_servers=mcp_servers, on_tool_call=print_tool_call,
     )
+    try:
+        _run_agent(args, agent)
+    finally:
+        agent.close()
+
+
+def _run_agent(args: argparse.Namespace, agent: Agent) -> None:
     saved_system = agent.history.get_system_prompt()
     if saved_system is not None:
         args.system = saved_system
@@ -698,5 +724,6 @@ def run() -> None:
     """Запустить CLI с выводом ожидаемых ошибок без traceback."""
     try:
         main()
-    except (ValueError, OSError, MemoryStorageError, ProfileStorageError, InvariantStorageError) as error:
+    except (ValueError, OSError, MemoryStorageError, ProfileStorageError, InvariantStorageError,
+            MCPConnectionError, MCPToolError) as error:
         raise SystemExit(str(error)) from error

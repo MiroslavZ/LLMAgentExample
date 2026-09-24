@@ -13,8 +13,9 @@ import httpx2
 import uvicorn
 from mcp import Tool, types
 from mcp.server import MCPServer as SDKServer
+from starlette.responses import JSONResponse
 
-from llm_agent.mcp_client import MCPConnectionError, MCPDiscovery, get_tools, main
+from llm_agent.mcp_client import MCPConnectionError, MCPDiscovery, call_tool, get_tools, main
 from llm_agent.mcp_config import MCPServer
 
 
@@ -95,6 +96,108 @@ def settings(*, authenticated=False):
 
 
 class MCPClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_local_tools_bypass_proxy_but_remote_server_uses_it(self):
+        with patch("mcp.server.mcpserver.server.configure_logging"):
+            sdk_server = SDKServer("local-with-proxy")
+
+        @sdk_server.tool()
+        def echo(text: str) -> str:
+            return text
+
+        mcp_app = sdk_server.streamable_http_app(json_response=True)
+        proxy_requests = []
+
+        async def app(scope, receive, send):
+            # Прямой запрос использует /mcp, HTTP-прокси получает абсолютный URL
+            # (или CONNECT host:port для HTTPS). Один listener играет обе роли.
+            if scope["type"] == "http" and scope["path"] != "/mcp":
+                proxy_requests.append(scope["path"])
+                await JSONResponse({"error": "Proxy cannot reach destination"}, status_code=503)(scope, receive, send)
+                return
+            await mcp_app(scope, receive, send)
+
+        http_server = uvicorn.Server(uvicorn.Config(app, http="h11", log_level="error", log_config=None, lifespan="on"))
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.setblocking(False)
+            port = listener.getsockname()[1]
+            proxy_url = f"http://127.0.0.1:{port}"
+            serving = asyncio.create_task(http_server.serve(sockets=[listener]))
+            try:
+                with anyio.fail_after(5):
+                    while not http_server.started:
+                        if serving.done():
+                            await serving
+                            self.fail("Тестовый сервер завершился до запуска")
+                        await asyncio.sleep(0.01)
+                # getproxies включает не только env, но и системный прокси Windows.
+                with patch("httpx2._utils.getproxies", return_value={
+                    "http": proxy_url, "https": proxy_url, "all": proxy_url,
+                }):
+                    async with _ASYNC_CLIENT(timeout=2) as unprotected:
+                        response = await unprotected.get(f"{proxy_url}/mcp")
+                    self.assertEqual(response.status_code, 503)
+                    self.assertEqual(len(proxy_requests), 1)
+
+                    for host in ("127.0.0.1", "localhost"):
+                        server = MCPServer("local", "Local", f"http://{host}:{port}/mcp")
+                        catalog = await get_tools(server, timeout=3)
+                        self.assertEqual([tool.name for tool in catalog.tools], ["echo"])
+                        result = await call_tool(server, "echo", {"text": "direct"}, timeout=3)
+                        self.assertFalse(result.is_error)
+                        self.assertEqual(result.content[0].text, "direct")
+                    self.assertEqual(len(proxy_requests), 1)
+
+                    # Удалённые MCP сохраняют маршрут через пользовательский прокси.
+                    with self.assertRaises(MCPConnectionError):
+                        await get_tools(settings(), timeout=3)
+                    self.assertEqual(len(proxy_requests), 2)
+            finally:
+                http_server.should_exit = True
+                await asyncio.wait_for(serving, timeout=5)
+
+    async def test_call_returns_tool_error_and_closes_session_without_retry(self):
+        wire = WireServer()
+        calls = []
+
+        async def respond(request):
+            message = json.loads(request.content) if request.method == "POST" else {}
+            if message.get("method") == "tools/call":
+                calls.append(message)
+                return httpx2.Response(200, json={
+                    "jsonrpc": "2.0", "id": message["id"], "result": {
+                        "isError": True, "content": [{"type": "text", "text": "Репозиторий не найден"}],
+                    },
+                })
+            return await wire(request)
+
+        with mock_http(respond) as clients:
+            result = await call_tool(settings(), "get_repository", {"owner": "o", "repo": "r"}, timeout=2)
+        self.assertTrue(result.is_error)
+        self.assertEqual(result.content[0].text, "Репозиторий не найден")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["params"]["arguments"], {"owner": "o", "repo": "r"})
+        self.assertTrue(clients[0].is_closed)
+        self.assertEqual(wire.requests[-1].method, "DELETE")
+
+    async def test_call_transport_failure_is_safe_and_is_not_retried(self):
+        wire = WireServer()
+        calls = []
+
+        async def respond(request):
+            message = json.loads(request.content) if request.method == "POST" else {}
+            if message.get("method") == "tools/call":
+                calls.append(message)
+                return httpx2.Response(503, text=f"private details {_TOKEN}")
+            return await wire(request)
+
+        with mock_http(respond) as clients:
+            with self.assertRaisesRegex(MCPConnectionError, "503") as caught:
+                await call_tool(settings(), "get_repository", {}, timeout=2)
+        self.assertNotIn(_TOKEN, str(caught.exception))
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(clients[0].is_closed)
+
     async def test_initialize_notification_paginated_tools_and_cleanup(self):
         wire = WireServer(pages=[
             {"tools": [{"name": "read_issue", "description": "Читает задачу",

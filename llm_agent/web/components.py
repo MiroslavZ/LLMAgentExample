@@ -1,5 +1,6 @@
 """Компоненты представления без работы с хранилищем и моделью."""
 
+import re
 from collections.abc import Callable
 from datetime import datetime
 
@@ -40,6 +41,14 @@ def empty_chat() -> None:
             ui.label("Написать код")
 
 
+def _tool_code(content: str, *, language: str) -> None:
+    code = ui.code(content, language=language).classes("w-full")
+    # Результат MCP может сам содержать Markdown-код. Длинная ограда сохраняет
+    # его буквальным текстом, не позволяя закрыть блок и отобразить HTML.
+    fence = "`" * max(3, 1 + max((len(run[0]) for run in re.finditer(r"`+", content)), default=0))
+    code.markdown.bind_content_from(code, "content", lambda value: f"{fence}{language}\n{value}\n{fence}")
+
+
 def render_turn(turn: Turn, *, restore: Callable[[], None], busy: bool) -> None:
     with ui.column().classes("chat-turn"):
         with ui.column().classes("user-message"):
@@ -54,6 +63,17 @@ def render_turn(turn: Turn, *, restore: Callable[[], None], busy: bool) -> None:
         if turn.meta_prompt is not None:
             with ui.expansion("Сгенерированный промпт", icon="auto_fix_high").classes("meta-result"):
                 ui.markdown(turn.meta_prompt).classes("message-markdown")
+        for call in turn.tool_calls:
+            status = "Ошибка" if call.is_error else "Успешно"
+            with ui.expansion(
+                f"{call.server_name} · {call.tool_name} · {status}",
+                icon="error_outline" if call.is_error else "build",
+            ).classes("mcp-tool"):
+                ui.label(f"{status} · {call.elapsed_seconds:.1f} с").classes("memory-description")
+                ui.label("Аргументы").classes("font-medium text-sm")
+                _tool_code(call.arguments, language="json")
+                ui.label("Результат").classes("font-medium text-sm")
+                _tool_code(call.result, language="text")
         if turn.answer is not None:
             with ui.column().classes("assistant-message"):
                 with ui.row().classes("message-heading"):

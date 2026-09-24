@@ -7,6 +7,7 @@ from typing import Literal
 
 from .history import HistoryManager
 from .task_state import TaskState
+from .tool_events import ToolCallRecord
 
 
 def utc_now() -> str:
@@ -66,6 +67,7 @@ class Turn:
     created_at: str = field(default_factory=utc_now)
     elapsed_seconds: float | None = None
     memory_updated: bool = False
+    tool_calls: list[ToolCallRecord] = field(default_factory=list)
 
 
 @dataclass

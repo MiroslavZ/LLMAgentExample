@@ -23,10 +23,13 @@ from .history import HistoryManager, TokenUsage
 from .invariants import InvariantSet, InvariantStorageError, InvariantStore
 from .models import ContextSettings, Conversation, RequestOptions, Turn, utc_now
 from .memory import MemorySnapshot, MemoryStorageError, MemoryStore
-from .mcp_config import MCPServerStore
+from .mcp_config import MCPServerStore, MCPStorageError
+from .mcp_client import MCPConnectionError
+from .mcp_tools import MCPToolError
 from .profile import ProfileStorageError, ProfileStore, UserProfile
 from .storage import ConversationBusyError, ConversationStorageError, ConversationStore
 from .task_state import CONTINUE_TASK, PLAN_APPROVAL_REQUIRED, TaskStage, TaskState, TaskStateError
+from .tool_events import ToolCallRecord
 
 
 class _ConversationHistory(HistoryManager):
@@ -85,6 +88,14 @@ class _ConversationHistory(HistoryManager):
         finally:
             self._turn_updates = {}
 
+    def record_tool_call(self, record: ToolCallRecord) -> None:
+        """Сохранить результат до следующего обращения к модели, включая сбой финала."""
+        self._turn_updates = {"tool_calls": [*self.conversation.turns[-1].tool_calls, record]}
+        try:
+            self._write_data(self.conversation.working_context)
+        finally:
+            self._turn_updates = {}
+
     def add_refusal(self, user: str, assistant: str, usage: TokenUsage | None) -> None:
         self._turn_updates = {
             "answer": assistant,
@@ -114,6 +125,8 @@ def _friendly_error(error: Exception) -> str:
         return "Не удалось загрузить профиль. Проверьте файл profiles.sqlite3 и доступ к каталогу данных."
     if isinstance(error, InvariantStorageError):
         return "Не удалось загрузить инварианты. Исправьте файл правил; запрос к модели не отправлен."
+    if isinstance(error, (MCPConnectionError, MCPStorageError, MCPToolError)):
+        return str(error)
     if isinstance(error, TaskStateError):
         # Собственные сообщения валидатора содержат конкретную причину и
         # контекст задачи, без тела ответа или текста исключений SDK.
@@ -466,6 +479,8 @@ class ConversationService:
                     "memory": memory,
                     "profile": profile,
                     "invariants": self.get_invariants(),
+                    "mcp_servers": self.mcp_servers.list(),
+                    "on_tool_call": history.record_tool_call,
                 }
                 if settings.strategy in ("window", "facts"):
                     agent_options.update(strategy=settings.strategy, window_size=settings.window_size)
@@ -483,7 +498,7 @@ class ConversationService:
                     conversation = deepcopy(history.pending_snapshot or history.conversation)
                 turn = conversation.turns[-1]
                 turn.status = "partial" if (
-                    turn.meta_prompt is not None or turn.answer is not None or turn.memory_updated
+                    turn.meta_prompt is not None or turn.answer is not None or turn.memory_updated or turn.tool_calls
                 ) else "error"
                 turn.error = _friendly_error(error)
                 turn.elapsed_seconds = time.perf_counter() - started_at

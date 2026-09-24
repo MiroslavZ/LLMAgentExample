@@ -25,6 +25,13 @@ class MCPServerTests(unittest.TestCase):
             self.server.name = "Изменён"
         self.assertEqual(MCPServer.from_dict({"id": "local", "name": "Local", "url": "http://localhost:8000/mcp"}).token_env, "")
 
+    def test_legacy_config_is_disabled_and_enabled_flag_roundtrips(self):
+        old_data = self.server.to_dict()
+        del old_data["enabled"]
+        self.assertFalse(MCPServer.from_dict(old_data).enabled)
+        enabled = replace(self.server, enabled=True)
+        self.assertEqual(MCPServer.from_dict(enabled.to_dict()), enabled)
+
     def test_accepts_https_and_local_http_urls(self):
         for url in (
             GITHUB_MCP_URL, "https://example.com:443/mcp", "https://[2001:db8::1]/mcp",
@@ -55,6 +62,7 @@ class MCPServerTests(unittest.TestCase):
             "id": (None, 1, "", "two words", "../mcp", "русский", "x" * 65),
             "name": (None, 1, "", "  "),
             "token_env": (None, 1, "TOKEN=secret", "Bearer token", "${TOKEN}", "1TOKEN", "ТОКЕН"),
+            "enabled": (None, 0, 1, "true", "false", [], {}),
         }.items():
             for value in values:
                 with self.subTest(field=field, value=value), self.assertRaises(ValueError):
@@ -98,6 +106,17 @@ class MCPServerStoreTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "другой вкладке"):
                     self.store.save(replace(self.github, name="Устаревшая правка"), expected=self.github)
                 self.assertEqual(self.store.list(), [changed] if exists else [])
+
+    def test_old_record_loads_disabled_and_can_be_enabled_after_restart(self):
+        self.store.save(self.github)
+        old_data = self.github.to_dict()
+        del old_data["enabled"]
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.execute("UPDATE mcp_servers SET data = ?", (json.dumps(old_data),))
+        restored = MCPServerStore(self.path).get("github")
+        self.assertFalse(restored.enabled)
+        self.store.save(replace(restored, enabled=True), expected=restored)
+        self.assertTrue(MCPServerStore(self.path).get("github").enabled)
 
     def test_invalid_save_does_not_create_storage_and_missing_records_fail(self):
         with self.assertRaises(ValueError):

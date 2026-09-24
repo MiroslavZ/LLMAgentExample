@@ -13,6 +13,7 @@ from typing import Iterator
 
 from .history import HistoryManager
 from .models import ContextSettings, Conversation, RequestOptions, Turn
+from .tool_events import ToolCallRecord
 
 
 class ConversationStorageError(RuntimeError):
@@ -107,12 +108,17 @@ class ConversationStore:
         values["settings"] = ContextSettings(**values["settings"])
         values["settings"].validate()
         turns = []
+        turn_fields = {field.name for field in fields(Turn)}
         for item in values["turns"]:
-            if not isinstance(item, dict) or set(item) != {field.name for field in fields(Turn)}:
+            if not isinstance(item, dict) or set(item) not in (turn_fields, turn_fields - {"tool_calls"}):
                 raise ValueError("Некорректный формат хода диалога")
             turn_values = item.copy()
             turn_values["options"] = RequestOptions(**turn_values["options"])
             turn_values["options"].validate()
+            tool_calls = turn_values.get("tool_calls", [])
+            if not isinstance(tool_calls, list):
+                raise ValueError("Вызовы инструментов должны быть списком")
+            turn_values["tool_calls"] = [ToolCallRecord.from_dict(record) for record in tool_calls]
             turn = Turn(**turn_values)
             if (
                 not isinstance(turn.user, str) or not turn.user.strip()

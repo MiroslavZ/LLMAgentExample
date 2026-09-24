@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 GITHUB_TOKEN_ENV = "GITHUB_PERSONAL_ACCESS_TOKEN"
+LOCAL_GITHUB_MCP_URL = "http://127.0.0.1:8000/mcp"
 
 
 class MCPStorageError(RuntimeError):
@@ -64,6 +65,7 @@ class MCPServer:
     name: str
     url: str
     token_env: str = ""
+    enabled: bool = False
 
     def __post_init__(self) -> None:
         self.validate()
@@ -78,8 +80,10 @@ class MCPServer:
             self.token_env and re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", self.token_env) is None
         ):
             raise ValueError("Укажите имя переменной окружения с токеном, например GITHUB_PERSONAL_ACCESS_TOKEN")
+        if type(self.enabled) is not bool:
+            raise ValueError("Использование MCP в чате должно быть логическим значением")
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, str | bool]:
         return asdict(self)
 
     @classmethod
@@ -87,9 +91,9 @@ class MCPServer:
         if (
             not isinstance(data, dict)
             or not {"id", "name", "url"} <= data.keys()
-            or data.keys() - {"id", "name", "url", "token_env"}
+            or data.keys() - {"id", "name", "url", "token_env", "enabled"}
         ):
-            raise ValueError("Настройки MCP должны содержать id, name, url и необязательное поле token_env")
+            raise ValueError("Настройки MCP должны содержать id, name, url и необязательные поля token_env, enabled")
         return cls(**data)
 
 

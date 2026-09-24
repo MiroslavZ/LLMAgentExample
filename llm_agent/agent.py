@@ -1,6 +1,6 @@
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +14,9 @@ from .context_strategy import SUPPORTED_STRATEGIES, FactsStrategy, WindowStrateg
 from .memory import MemorySnapshot
 from .invariants import CHECK_SYSTEM, InvariantSet, InvariantVerdict
 from .profile import UserProfile
+from .mcp_config import MCPServer
+from .mcp_tools import MAX_TOOL_CALLS, MAX_TOOL_ROUNDS, MCP_SYSTEM, MCPToolCatalog, MCPToolError
+from .tool_events import ToolCallRecord
 from .task_state import (
     CONTINUE_TASK, PLAN_APPROVAL_REQUIRED, STAGE_ACTIONS,
     TaskJSONError, TaskResponseError, TaskStage, TaskState, TaskStateError,
@@ -87,6 +90,7 @@ class RequestResult:
     dialogue_usage: DialogueUsage = DialogueUsage()
     answer: str | None = None
     refused: bool = False
+    tool_calls: tuple[ToolCallRecord, ...] = ()
 
     @property
     def content(self) -> str:
@@ -108,6 +112,8 @@ class Agent:
         memory: MemorySnapshot | None = None,
         profile: UserProfile | None = None,
         invariants: InvariantSet | None = None,
+        mcp_servers: Sequence[MCPServer] = (),
+        on_tool_call: Callable[[ToolCallRecord], None] | None = None,
     ) -> None:
         if strategy is not None and strategy not in SUPPORTED_STRATEGIES:
             raise ValueError(f"Неизвестная стратегия: {strategy}")
@@ -136,6 +142,10 @@ class Agent:
         if invariants is not None and not isinstance(invariants, InvariantSet):
             raise ValueError("Требуется набор инвариантов")
         self.invariants = invariants if invariants is not None else InvariantSet()
+        self.mcp_servers = tuple(mcp_servers)
+        for server in self.mcp_servers:
+            server.validate()
+        self.on_tool_call = on_tool_call
         self.history = history if history is not None else (
             BranchHistoryManager(history_path, branch=branch) if strategy == "branch"
             else HistoryManager(history_path, strategy=self._strategy)
@@ -283,6 +293,7 @@ class Agent:
     def _refuse(
         self, user: str, verdict: InvariantVerdict, response: ChatCompletion,
         elapsed: float, response_format: str,
+        tool_calls: tuple[ToolCallRecord, ...] = (),
     ) -> RequestResult:
         answer = verdict.refusal(self.invariants, has_task=self.history.task_state is not None)
         if response_format != "text":
@@ -300,7 +311,8 @@ class Agent:
             }],
             usage=response.usage,
         )
-        return RequestResult(safe_response, elapsed, self.history.get_usage(), answer=answer, refused=True)
+        return RequestResult(safe_response, elapsed, self.history.get_usage(), answer=answer,
+                             refused=True, tool_calls=tool_calls)
 
     def _check_request(self, user: str, model: str, response_format: str) -> RequestResult | None:
         if self.invariants.rules:
@@ -339,6 +351,9 @@ class Agent:
         # Пользовательский stop мог оборвать JSON даже с finish_reason=stop.
         # Лимит max_tokens сохраняем; на весь протокол допускается лишь один повтор.
         repair.pop("stop", None)
+        if "tools" in repair:
+            # Ремонтирует только итоговый JSON, используя уже полученные результаты.
+            repair["tool_choice"] = "none"
         started = time.perf_counter()
         response = self._client.chat.completions.create(**repair)
         return response, time.perf_counter() - started
@@ -362,6 +377,62 @@ class Agent:
             raise TaskResponseError(task, reason)
         return task.apply_reply(user, choice.message.content or "")
 
+    def _complete_with_tools(
+        self, user: str, request: dict, *, use_tools: bool, response_format: str,
+    ) -> tuple[ChatCompletion, float, tuple[ToolCallRecord, ...], RequestResult | None]:
+        started = time.perf_counter()
+        servers = [server for server in self.mcp_servers if server.enabled] if use_tools else []
+        catalog = MCPToolCatalog.discover(servers)
+        if catalog.functions:
+            request.update(tools=catalog.functions, tool_choice="auto")
+            request["messages"] = [{"role": "system", "content": MCP_SYSTEM}, *request["messages"]]
+        records: list[ToolCallRecord] = []
+        seen_ids: set[str] = set()
+        for round_number in range(MAX_TOOL_ROUNDS + 1):
+            response = self._client.chat.completions.create(**request)
+            choice = response.choices[0] if response.choices else None
+            calls = choice.message.tool_calls if choice is not None else None
+            if not catalog.functions or not calls:
+                if catalog.functions and choice is not None and choice.finish_reason == "tool_calls":
+                    self.history.record_response_usage(self._token_usage(response))
+                    raise MCPToolError("Модель запросила инструменты, но не передала вызовы.")
+                return response, time.perf_counter() - started, tuple(records), None
+            # Каждый промежуточный ответ оплачивается, даже если его вызовы отклонены.
+            self.history.record_response_usage(self._token_usage(response))
+            if choice.finish_reason != "tool_calls":
+                raise MCPToolError("Модель не завершила описание вызовов инструментов. Вызовы не выполнены.")
+            if round_number == MAX_TOOL_ROUNDS or len(records) + len(calls) > MAX_TOOL_CALLS:
+                raise MCPToolError("Достигнут лимит MCP-вызовов за запрос. Уточните задачу или продолжите новым сообщением.")
+            ids = [call.id for call in calls]
+            if (any(call.type != "function" or not call.id for call in calls)
+                    or len(set(ids)) != len(ids) or seen_ids.intersection(ids)):
+                raise MCPToolError("Модель вернула некорректные или повторные идентификаторы MCP-вызовов.")
+            seen_ids.update(ids)
+            assistant = choice.message.model_dump(mode="json", exclude_none=True)
+            if self.invariants.rules:
+                verdict, _, _ = self._check_invariants(
+                    user, request["model"], candidate=json.dumps(assistant, ensure_ascii=False),
+                )
+                if not verdict.passed:
+                    elapsed = time.perf_counter() - started
+                    refusal = self._refuse(user, verdict, response, elapsed, response_format, tuple(records))
+                    return response, elapsed, tuple(records), refusal
+            messages = [*request["messages"], assistant]
+            for call in calls:
+                record = catalog.execute(call.id, call.function.name, call.function.arguments)
+                records.append(record)
+                if self.on_tool_call is not None:
+                    self.on_tool_call(record)
+                messages.append({"role": "tool", "tool_call_id": call.id, "content": record.result})
+            request["messages"] = messages
+            if round_number + 1 == MAX_TOOL_ROUNDS or len(records) == MAX_TOOL_CALLS:
+                request["tool_choice"] = "none"
+                request["messages"] = [*messages, {"role": "system", "content": (
+                    "Лимит инструментов на этот запрос исчерпан. Составь итоговый ответ из полученных "
+                    "результатов и явно укажи, если задача выполнена лишь частично. Новые вызовы запрещены."
+                )}]
+        raise MCPToolError("Не удалось завершить цикл MCP-вызовов")
+
     def _request(
         self,
         user: str,
@@ -373,6 +444,7 @@ class Agent:
         temperature: float | None,
         stop_sequences: list[str] | None,
         response_format: str,
+        use_tools: bool = True,
     ) -> RequestResult:
         messages.append({"role": "user", "content": user})
         if self._strategy is not None:
@@ -419,9 +491,13 @@ class Agent:
         if stop_sequences:
             request["stop"] = stop_sequences
 
-        started = time.perf_counter()
-        response = self._client.chat.completions.create(**request)
-        elapsed = time.perf_counter() - started
+        # До утверждения плана модель только обсуждает задачу.
+        use_tools = use_tools and (not active_task or task.stage in (TaskStage.EXECUTION, TaskStage.VALIDATION))
+        response, elapsed, tool_calls, refusal = self._complete_with_tools(
+            user, request, use_tools=use_tools, response_format=response_format,
+        )
+        if refusal is not None:
+            return refusal
         updated_task = None
         for attempt in range(2):
             tokens = self._token_usage(response)
@@ -429,7 +505,7 @@ class Agent:
             answer = (choice.message.content or "") if choice is not None else ""
             if self.invariants.rules and (choice is None or choice.finish_reason != "stop" or not answer.strip()):
                 self.history.record_response_usage(tokens)
-                return self._refuse(user, InvariantVerdict(uncertain=True), response, elapsed, response_format)
+                return self._refuse(user, InvariantVerdict(uncertain=True), response, elapsed, response_format, tool_calls)
             if not active_task:
                 if choice is None:
                     self.history.record_response_usage(tokens)
@@ -470,12 +546,12 @@ class Agent:
             elapsed += check_elapsed
             if not verdict.passed:
                 self.history.record_response_usage(tokens)
-                return self._refuse(user, verdict, response, elapsed, response_format)
+                return self._refuse(user, verdict, response, elapsed, response_format, tool_calls)
         if active_task:
             self.history.add_exchange(user, answer, tokens, task_state=updated_task)
         else:
             self.history.add_exchange(user, answer, tokens)
-        return RequestResult(response, elapsed, self.history.get_usage(), answer=answer)
+        return RequestResult(response, elapsed, self.history.get_usage(), answer=answer, tool_calls=tool_calls)
 
     def request_with_meta_prompt(
         self,
@@ -507,6 +583,7 @@ class Agent:
             messages=self.history.get_messages(include_system=False),
             system=META_PROMPT_SYSTEM,
             response_format="text",
+            use_tools=False,
             **options,
         )
         if meta_result.refused:

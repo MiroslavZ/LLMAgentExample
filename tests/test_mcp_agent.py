@@ -262,7 +262,7 @@ class MCPAgentTests(unittest.TestCase):
         output = io.StringIO()
         arguments = [
             "agent", "--mcp-url", SERVER.url, "--user", "Получи сведения о репозитории octocat/Hello-World",
-            "--history", str(self.path), "--memory-db", str(self.directory / "memory.sqlite3"),
+            "--data-dir", str(self.directory / "conversations"), "--new-conversation",
             "--invariants-file", str(self.directory / "invariants.json"),
         ]
         with patch("sys.argv", arguments), patch("llm_agent.cli.load_env"), \

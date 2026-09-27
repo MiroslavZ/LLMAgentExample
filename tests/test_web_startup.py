@@ -23,6 +23,14 @@ class WebStartupTests(unittest.TestCase):
         # Пустое явное значение также предотвращает чтение настоящего ключа из .env.
         environment = {**os.environ, "API_KEY": "", "PYTHONIOENCODING": "utf-8"}
         with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryFile() as output:
+            created = subprocess.run(
+                [sys.executable, "-m", "llm_agent", "--data-dir", directory, "--new-conversation"],
+                cwd=project_root, env=environment, capture_output=True, text=True, encoding="utf-8",
+                timeout=10, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+            self.assertEqual(created.returncode, 0, created.stderr)
+            cli_path, = Path(directory).glob("*.json")
+            self.assertIn(str(cli_path), created.stdout)
             process = subprocess.Popen(
                 [sys.executable, "-m", "llm_agent.web", "--port", str(port),
                  "--data-dir", directory, "--no-browser"],
@@ -50,6 +58,7 @@ class WebStartupTests(unittest.TestCase):
                     self.assertIn("API_KEY", response.text)
                     files = list(Path(directory).glob("*.json"))
                     self.assertEqual(len(files), 1)
+                    self.assertEqual(files[0], cli_path)
                     storage = ConversationService(Path(directory), token=None)
                     saved = storage.get(files[0].stem)
                     saved.title = "Диалог из хранилища"

@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 from rich.console import Console
 
-from llm_agent.branch_history import BranchHistoryManager
 from llm_agent.cli import main, parse_args, run
+from llm_agent.service import ConversationService
 from llm_agent.history import HistoryManager
 from llm_agent.task_state import CONTINUE_TASK, TaskStage, TaskState
 from tests.helpers import completion
@@ -20,9 +20,12 @@ class TaskCliTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.directory = Path(directory.name)
-        self.history = self.directory / "history.json"
-        self.memory_db = self.directory / "memory.sqlite3"
-        self.profiles_db = self.directory / "profiles.sqlite3"
+        self.data_dir = self.directory / "conversations"
+        self.service = ConversationService(self.data_dir, token=None)
+        self.conversation = self.service.create()
+        self.history = self.service.store.path(self.conversation.id)
+        self.memory_db = self.data_dir / "memory.sqlite3"
+        self.profiles_db = self.data_dir / "profiles.sqlite3"
         client = patch("llm_agent.agent.OpenAI")
         self.client = client.start()
         self.addCleanup(client.stop)
@@ -35,7 +38,7 @@ class TaskCliTests(unittest.TestCase):
         output = io.StringIO()
         arguments = [
             "main.py", "--history", str(self.history),
-            "--memory-db", str(self.memory_db),
+            "--data-dir", str(self.data_dir),
             "--invariants-file", str(self.directory / "invariants.json"), *options,
         ]
         with patch("sys.argv", arguments), patch(
@@ -51,18 +54,28 @@ class TaskCliTests(unittest.TestCase):
         )
         self.create.return_value = response
 
-    def state(self):
-        return HistoryManager(self.history).task_state
+    def seed_task(self, state):
+        fixture = self.directory / "fixture.json"
+        history = HistoryManager(fixture)
+        history.clear()
+        if state is not None:
+            history.add_exchange("Цель", "Ответ", None, task_state=state)
+        conversation = self.service.get(self.conversation.id)
+        conversation.working_context = json.loads(fixture.read_text(encoding="utf-8"))
+        self.service.store.save(conversation)
 
-    def test_show_absent_task_does_not_create_files_or_load_environment(self):
+    def state(self):
+        return self.service.get(self.conversation.id).task_state
+
+    def test_show_absent_task_does_not_load_environment(self):
         with patch.dict("os.environ", {}, clear=True):
             self.assertIsNone(json.loads(self.run_cli("--task-show")))
-            self.assertIsNone(json.loads(self.run_cli("--task-show", "--last-messages", "2")))
-        self.assertEqual(list(self.directory.iterdir()), [])
+            self.assertIsNone(json.loads(self.run_cli("--task-show")))
+        self.assertEqual(self.service.get(self.conversation.id).turns, [])
         self.load_env.assert_not_called()
         self.client.assert_not_called()
 
-    def test_local_start_pause_resume_survive_restart_without_api_or_databases(self):
+    def test_local_start_pause_resume_survive_restart_without_api(self):
         title = "Подготовить [доклад] " + "с подробным описанием " * 20
         with patch.dict("os.environ", {}, clear=True):
             self.run_cli("--task-start", title)
@@ -74,8 +87,6 @@ class TaskCliTests(unittest.TestCase):
             self.assertEqual(self.state(), initial.pause())
             self.run_cli("--task-resume")
             self.assertEqual(self.state(), initial)
-        self.assertFalse(self.memory_db.exists())
-        self.assertFalse(self.profiles_db.exists())
         self.load_env.assert_not_called()
         self.client.assert_not_called()
 
@@ -158,8 +169,6 @@ class TaskCliTests(unittest.TestCase):
                 self.assertIn("--task-resume" if paused else "--task-start", str(error.exception))
                 after = self.history.read_bytes() if self.history.exists() else None
                 self.assertEqual(after, before)
-        self.assertFalse(self.memory_db.exists())
-        self.assertFalse(self.profiles_db.exists())
         self.load_env.assert_not_called()
         self.client.assert_not_called()
 
@@ -183,19 +192,16 @@ class TaskCliTests(unittest.TestCase):
 
     def test_plan_approval_is_local_and_survives_restart(self):
         proposed = TaskState("Доклад", plan=("Подготовить текст",))
-        HistoryManager(self.history).add_exchange("Цель", "Предлагаю план", None, task_state=proposed)
+        self.seed_task(proposed)
         with patch.dict("os.environ", {}, clear=True):
             self.run_cli("--task-approve")
         self.assertEqual(self.state(), proposed.approve_plan())
-        self.assertFalse(self.memory_db.exists())
-        self.assertFalse(self.profiles_db.exists())
         self.load_env.assert_not_called()
         self.client.assert_not_called()
 
     def test_continue_requires_approval_without_sending_request(self):
         proposed = TaskState("Доклад", plan=("Подготовить текст",))
-        history = HistoryManager(self.history)
-        history.add_exchange("Цель", "Предлагаю план", None, task_state=proposed)
+        self.seed_task(proposed)
         before = self.history.read_bytes()
         with self.assertRaisesRegex(SystemExit, "--task-approve"):
             self.run_cli("--task-continue", entrypoint=run)
@@ -205,7 +211,7 @@ class TaskCliTests(unittest.TestCase):
 
     def test_approve_with_user_runs_first_step_after_explicit_approval(self):
         proposed = TaskState("Доклад", plan=("Подготовить текст",))
-        HistoryManager(self.history).add_exchange("Цель", "Предлагаю план", None, task_state=proposed)
+        self.seed_task(proposed)
         self.reply("complete_step", "Готовый текст")
         with patch.dict("os.environ", {"API_KEY": "test"}):
             self.run_cli("--task-approve", "--user", "Используй короткие предложения")
@@ -219,46 +225,13 @@ class TaskCliTests(unittest.TestCase):
         proposed = TaskState("Доклад", plan=("Подготовить текст",))
         for state in (None, TaskState("Доклад"), proposed.pause(), proposed.approve_plan()):
             with self.subTest(state=state):
-                history = HistoryManager(self.history)
-                history.clear()
-                if state is not None:
-                    history.add_exchange("Цель", "Ответ", None, task_state=state)
+                self.seed_task(state)
                 before = self.history.read_bytes()
                 with self.assertRaises(SystemExit):
                     self.run_cli("--task-approve", entrypoint=run)
                 self.assertEqual(self.history.read_bytes(), before)
         self.load_env.assert_not_called()
         self.client.assert_not_called()
-
-    def test_branch_checkpoint_contains_new_task_and_pause_is_local(self):
-        self.run_cli("--strategy", "branch", "--task-start", "Доклад", "--checkpoint", "start")
-        original = BranchHistoryManager(self.history).task_state
-        self.run_cli("--strategy", "branch", "--create-branch", "a", "--from-checkpoint", "start")
-        self.assertEqual(BranchHistoryManager(self.history).task_state, original)
-        self.run_cli("--strategy", "branch", "--task-pause")
-        paused = json.loads(self.run_cli("--strategy", "branch", "--task-show"))
-        self.assertEqual(paused, original.pause().to_dict())
-        main = json.loads(self.run_cli("--strategy", "branch", "--branch", "main", "--task-show"))
-        self.assertEqual(main, original.to_dict())
-        self.assertFalse(self.memory_db.exists())
-        self.assertFalse(self.profiles_db.exists())
-        self.client.assert_not_called()
-
-    def test_approval_affects_only_current_branch_and_is_saved_in_checkpoint(self):
-        proposed = TaskState("Доклад", plan=("Подготовить текст",))
-        history = BranchHistoryManager(self.history)
-        history.add_exchange("Цель", "Предлагаю план", None, task_state=proposed)
-        history.create_checkpoint("proposal")
-        self.run_cli("--strategy", "branch", "--create-branch", "alternative", "--from-checkpoint", "proposal")
-        self.run_cli("--strategy", "branch", "--task-approve", "--checkpoint", "approved")
-        restored = BranchHistoryManager(self.history)
-        self.assertEqual(restored.task_state, proposed.approve_plan())
-        restored.switch_branch("main")
-        self.assertEqual(restored.task_state, proposed)
-        restored.create_branch("from-approved", from_checkpoint="approved")
-        self.assertEqual(restored.task_state, proposed.approve_plan())
-        self.client.assert_not_called()
-        self.load_env.assert_not_called()
 
     def test_show_remains_json_when_combined_with_other_local_edits(self):
         self.run_cli("--task-start", "Доклад")
@@ -269,22 +242,45 @@ class TaskCliTests(unittest.TestCase):
         self.assertEqual(json.loads(output), self.state().to_dict())
         self.client.assert_not_called()
 
-    def test_invalid_model_reply_preserves_task_and_does_not_create_checkpoint(self):
-        self.run_cli("--strategy", "branch", "--task-start", "Доклад")
-        before = BranchHistoryManager(self.history).task_state
+    def test_invalid_model_reply_preserves_task(self):
+        self.run_cli("--task-start", "Доклад")
+        before = self.state()
         self.reply("finish", "Слишком раннее завершение")
         with patch.dict("os.environ", {"API_KEY": "test"}), self.assertRaises(SystemExit) as raised:
             self.run_cli(
-                "--strategy", "branch", "--task-continue", "--checkpoint", "invalid",
+                "--task-continue",
                 entrypoint=run,
             )
         self.assertIn('Действие "finish" (завершить задачу) недопустимо', str(raised.exception))
         self.assertIn("Текущий этап: planning", str(raised.exception))
-        restored = BranchHistoryManager(self.history)
+        restored = self.service.get(self.conversation.id)
         self.assertEqual(restored.task_state, before)
-        self.assertEqual(restored.get_messages(), [])
-        self.assertEqual(restored.get_usage().total_tokens, 260)
-        self.assertEqual(restored.list_checkpoints(), [])
+        self.assertEqual(restored.turns[-1].status, "error")
+        messages, _, _, usage = HistoryManager._decode_data(restored.working_context)
+        self.assertEqual(messages, [])
+        self.assertEqual(usage.total_tokens, 260)
+
+    def test_start_without_selector_creates_shared_conversation(self):
+        output = io.StringIO()
+        with patch.dict("os.environ", {}, clear=True), patch("sys.argv", [
+            "main.py", "--data-dir", str(self.data_dir), "--task-start", "Новая задача",
+        ]), patch("llm_agent.cli.console", Console(file=output)):
+            main()
+        conversations = self.service.list_conversations()
+        self.assertEqual(len(conversations), 2)
+        created = next(item for item in conversations if item.id != self.conversation.id)
+        self.assertEqual(created.task_state.title, "Новая задача")
+        self.load_env.assert_not_called()
+        self.client.assert_not_called()
+
+    def test_local_task_operations_require_conversation(self):
+        for option in ("--task-show", "--task-pause", "--task-resume", "--task-approve", "--task-continue"):
+            with self.subTest(option=option), patch("sys.argv", [
+                "main.py", "--data-dir", str(self.data_dir), option,
+            ]), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    parse_args()
+                self.assertEqual(error.exception.code, 2)
 
     def test_invalid_combinations_fail_during_argument_parsing(self):
         for options in (

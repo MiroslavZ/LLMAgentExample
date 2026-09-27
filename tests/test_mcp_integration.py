@@ -101,7 +101,7 @@ class MCPIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 llm_requests.append(request)
                 self.assertEqual(request["tool_choice"], "auto")
                 if len(llm_requests) == 1:
-                    self.assertEqual(len(request["tools"]), 7)
+                    # Каталог MCP может расширяться; проверяем нужный инструмент и его схему.
                     tool = next(item["function"] for item in request["tools"]
                                 if "get_repository." in item["function"]["description"])
                     schema = tool["parameters"]

@@ -45,9 +45,12 @@
 python main.py --profile-import examples/profiles/beginner.json
 python main.py --profile-import examples/profiles/engineer.json
 python main.py --profile-list
-python main.py --history beginner-history.json --profile beginner
-python main.py --history beginner-history.json --profile-show
+python main.py --new-conversation --profile beginner
+python main.py --conversation <BEGINNER_ID> --profile-show
 ```
+
+Заменяйте `<BEGINNER_ID>` и `<ENGINEER_ID>` на ID соответствующих диалогов
+из вывода команд создания, без угловых скобок.
 
 Импорт создаёт или полностью заменяет профиль с тем же `id`, но сам не выбирает
 его. Для изменения отредактируйте исходный JSON и импортируйте повторно.
@@ -55,23 +58,23 @@ python main.py --history beginner-history.json --profile-show
 После выбора достаточно обычного запроса — повторять профиль не нужно:
 
 ```shell
-python main.py --history beginner-history.json --user "Как добавить кэширование результатов медленной функции?"
-python main.py --history beginner-history.json --user "Какие риски у этого подхода?"
-python main.py --history engineer-history.json --profile engineer --user "Как добавить кэширование результатов медленной функции?"
-python main.py --history engineer-history.json --user "Какие риски у этого подхода?"
+python main.py --conversation <BEGINNER_ID> --user "Как добавить кэширование результатов медленной функции?"
+python main.py --conversation <BEGINNER_ID> --user "Какие риски у этого подхода?"
+python main.py --new-conversation --profile engineer --user "Как добавить кэширование результатов медленной функции?"
+python main.py --conversation <ENGINEER_ID> --user "Какие риски у этого подхода?"
 ```
 
 Снять выбор или удалить профиль:
 
 ```shell
-python main.py --history beginner-history.json --profile-clear
+python main.py --conversation <BEGINNER_ID> --profile-clear
 python main.py --profile-delete beginner
 ```
 
-`--profiles-db PATH` выбирает отдельную базу. По умолчанию это `profiles.sqlite3`
-рядом с `--memory-db`; при стандартных параметрах CLI и веб видят одни профили.
-Выбор независим для каждого пути истории и каждой ветки (`--strategy branch`).
-Новая ветка начинает без профиля; checkpoint не копирует конфигурацию.
+Профили хранятся в `profiles.sqlite3` общего каталога диалогов. Используйте
+одинаковый `--data-dir` у CLI и веб для выбора другого каталога. Выбор профиля
+привязан к ID диалога: смена интерфейса сохраняет его, а новый диалог начинает
+без профиля. Веб-сервер не требуется для CLI-команд.
 
 ## Python
 
@@ -131,7 +134,7 @@ finally:
 ## Хранение
 
 В `data/conversations/profiles.sqlite3` отдельно хранятся таблицы `profiles`
-и `profile_selection`. Форматы истории и существующей базы памяти не меняются.
+и `profile_selection`; выбор хранится по общему ID диалога.
 Удаление диалога убирает его выбор, сохраняя сами профили. Очистка истории или
 рабочей памяти не меняет профиль. Обычные сообщения не создают и не редактируют
 профили автоматически; повреждение базы показывается как ошибка, а не как

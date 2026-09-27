@@ -1,3 +1,4 @@
+import contextlib
 import io
 import json
 import tempfile
@@ -125,12 +126,10 @@ class CompressionTests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     parse_args()
 
-    def test_cli_compression_options_and_warning(self):
-        for options, expected, warning in [
-            ([], (None, None), False),
-            (["--last-messages", "0"], (0, None), True),
-            (["--compress-every", "1"], (None, 1), True),
-            (["--last-messages", "0", "--compress-every", "1"], (0, 1), False),
+    def test_cli_compression_options_require_complete_settings(self):
+        for options, expected in [
+            ([], (None, None)),
+            (["--last-messages", "0", "--compress-every", "1"], (0, 1)),
         ]:
             with self.subTest(options=options):
                 output = io.StringIO()
@@ -139,12 +138,12 @@ class CompressionTests(unittest.TestCase):
                 ):
                     args = parse_args()
                 self.assertEqual((args.last_messages, args.compress_every), expected)
-                if warning:
-                    self.assertIn("необходимо указать оба аргумента", output.getvalue())
-                    self.assertIn("--last-messages и --compress-every", output.getvalue())
-                    self.assertIn("продолжит работу без сжатия", output.getvalue())
-                else:
-                    self.assertEqual(output.getvalue(), "")
+                self.assertEqual(output.getvalue(), "")
+        for options in (["--last-messages", "0"], ["--compress-every", "1"]):
+            with self.subTest(options=options), patch("sys.argv", ["main.py", "--user", "Тест", *options]):
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                    parse_args()
+                self.assertEqual(error.exception.code, 2)
 
     def test_disabled_compression_preserves_history_at_all_stages(self):
         for options in ({}, {"last_messages": 0}, {"compress_every": 1}):

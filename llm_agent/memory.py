@@ -5,7 +5,6 @@
 """
 
 import json
-import os
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -27,12 +26,6 @@ def _text(value: str, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{label}: требуется непустая строка")
     return value.strip()
-
-
-def cli_memory_scope(history_path: str | Path, branch: str | None = None) -> str:
-    """Один файл истории — одна задача; каждая ветка имеет свои записи задачи."""
-    path = os.path.normcase(str(Path(history_path).expanduser().resolve()))
-    return "cli:" + json.dumps([path, branch], ensure_ascii=False)
 
 
 @dataclass

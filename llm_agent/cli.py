@@ -1,6 +1,8 @@
 import argparse
 import json
 import os
+import re
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from rich.console import Console, RenderableType
@@ -12,24 +14,24 @@ from rich.text import Text
 
 from .agent import (
     DEFAULT_MODEL,
-    META_PROMPT_SYSTEM, Agent, CompressionResult, RequestResult,
+    CompressionResult, RequestResult,
 )
-from .history import DEFAULT_HISTORY_PATH, HistoryManager
+from .history import HistoryManager
 from .invariants import (
-    DEFAULT_INVARIANTS_PATH, InvariantSet, InvariantStorageError, InvariantStore,
+    InvariantSet, InvariantStorageError,
 )
-from .branch_history import BranchHistoryManager
-from .context_strategy import SUPPORTED_STRATEGIES
 from .memory import (
-    DEFAULT_MEMORY_PATH, MEMORY_LAYERS,
-    MemorySnapshot, MemoryStorageError, MemoryStore, cli_memory_scope,
+    MEMORY_LAYERS, MemorySnapshot, MemoryStorageError,
 )
-from .profile import ProfileStorageError, ProfileStore, UserProfile
-from .task_state import CONTINUE_TASK
-from .mcp_config import MCPServer
+from .profile import ProfileStorageError, UserProfile
+from .task_state import CONTINUE_TASK, TaskState
+from .mcp_config import MCPServer, MCPStorageError
 from .mcp_client import MCPConnectionError
 from .mcp_tools import MCPToolError
 from .tool_events import ToolCallRecord
+from .models import Conversation, ContextSettings, RequestOptions
+from .service import ConversationService
+from .storage import DEFAULT_DATA_DIR, ConversationBusyError, ConversationStorageError
 
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
@@ -52,7 +54,7 @@ def nonnegative_int(value: str) -> int:
 
 def load_env(path: Path) -> None:
     if not path.exists():
-        raise FileNotFoundError(f"Файл {path} не найден")
+        return
 
     with path.open(encoding="utf-8") as env_file:
         for line in env_file:
@@ -71,8 +73,8 @@ def parse_args() -> argparse.Namespace:
         help=f"Имя модели (по умолчанию: {DEFAULT_MODEL})",
     )
     parser.add_argument("--system", help="Системный промпт диалога (сохраняется, если ещё не задан)")
-    parser.add_argument("--user", help="Текст запроса; необязателен для управления ветками, памятью, профилями, задачей и инвариантами")
-    parser.add_argument("--mcp-url", help="URL MCP-сервера, инструменты которого модель может вызывать")
+    parser.add_argument("--user", help="Текст запроса; необязателен для управления диалогами, памятью, профилями, задачей и инвариантами")
+    parser.add_argument("--mcp-url", help="Сохранить общий MCP-сервер для CLI и веба (ID: cli)")
     parser.add_argument("--mcp-token-env", default="", help="Имя переменной с MCP Bearer-токеном (не сам токен)")
     task_action = parser.add_mutually_exclusive_group()
     task_action.add_argument(
@@ -129,13 +131,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Сначала сгенерировать оптимальный промпт, затем выполнить основной запрос",
     )
-    parser.add_argument(
-        "--history",
-        type=Path,
-        default=DEFAULT_HISTORY_PATH,
-        metavar="PATH",
-        help=f"Путь к JSON-файлу истории (по умолчанию: ./{DEFAULT_HISTORY_PATH})",
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument(
+        "--conversation", "--history", dest="conversation",
+        metavar="ID_OR_PATH",
+        help="ID или путь к существующему общему диалогу",
     )
+    selection.add_argument("--new-conversation", action="store_true", help="Создать общий диалог")
+    parser.add_argument("--data-dir", type=Path, help="Общий каталог диалогов (по умолчанию data/conversations проекта)")
+    parser.add_argument("--list-conversations", action="store_true", help="Показать ID, названия и пути диалогов в JSON")
+    parser.add_argument("--show-conversation", action="store_true", help="Показать выбранный диалог целиком в JSON")
     parser.add_argument(
         "--context-limit", type=positive_int, metavar="N",
         help="Лимит контекста в токенах для сравнения с входом (задаётся явно)",
@@ -149,37 +154,12 @@ def parse_args() -> argparse.Namespace:
         help="Сжимать при накоплении N сообщений сверх last-messages; требует --last-messages (по умолчанию сжатие выключено)",
     )
     parser.add_argument(
-        "--strategy", choices=SUPPORTED_STRATEGIES,
-        help="Стратегия контекста: window, facts или branch",
+        "--strategy", choices=("full", "window", "facts", "summary"),
+        help="Стратегия нового диалога; у существующего по умолчанию сохраняется",
     )
     parser.add_argument(
         "--window-size", type=positive_int, metavar="N",
         help="Число последних сообщений, включая текущий запрос; требует --strategy window или facts",
-    )
-    parser.add_argument(
-        "--branch", type=BranchHistoryManager.validate_name, metavar="NAME",
-        help="Переключиться на существующую ветку (по умолчанию: сохранённая активная ветка, сначала main)",
-    )
-    branch_action = parser.add_mutually_exclusive_group()
-    branch_action.add_argument(
-        "--checkpoint", type=BranchHistoryManager.validate_name, metavar="NAME",
-        help="Сохранить checkpoint: после успешного запроса с --user, иначе из текущего диалога",
-    )
-    branch_action.add_argument(
-        "--create-branch", type=BranchHistoryManager.validate_name, metavar="NAME",
-        help="Создать и активировать ветку; требует --from-checkpoint",
-    )
-    branch_action.add_argument(
-        "--list-branches", action="store_true",
-        help="Показать ветки, активную ветку и checkpoints без обращения к API",
-    )
-    parser.add_argument(
-        "--from-checkpoint", type=BranchHistoryManager.validate_name, metavar="NAME",
-        help="Checkpoint, от которого создаётся новая ветка",
-    )
-    parser.add_argument(
-        "--memory-db", type=Path, default=DEFAULT_MEMORY_PATH, metavar="PATH",
-        help=f"База рабочей и долговременной памяти (по умолчанию: {DEFAULT_MEMORY_PATH})",
     )
     memory_action = parser.add_mutually_exclusive_group()
     memory_action.add_argument(
@@ -192,24 +172,20 @@ def parse_args() -> argparse.Namespace:
     )
     memory_action.add_argument(
         "--memory-clear-working", action="store_true",
-        help="Очистить рабочую память текущего диалога/ветки",
+        help="Очистить рабочую память текущего диалога",
     )
     parser.add_argument(
         "--memory-show", action="store_true",
         help="Показать три слоя памяти без обращения к API (до запроса, если указан --user)",
     )
-    parser.add_argument(
-        "--profiles-db", type=Path, metavar="PATH",
-        help="База профилей (по умолчанию: profiles.sqlite3 рядом с --memory-db)",
-    )
     profile_selection = parser.add_mutually_exclusive_group()
     profile_selection.add_argument(
         "--profile", metavar="ID",
-        help="Выбрать сохранённый профиль для текущего диалога/ветки и следующих запросов",
+        help="Выбрать сохранённый профиль для текущего диалога и следующих запросов",
     )
     profile_selection.add_argument(
         "--profile-clear", action="store_true",
-        help="Отключить профиль текущего диалога/ветки",
+        help="Отключить профиль текущего диалога",
     )
     profile_edit = parser.add_mutually_exclusive_group()
     profile_edit.add_argument(
@@ -218,7 +194,7 @@ def parse_args() -> argparse.Namespace:
     )
     profile_edit.add_argument(
         "--profile-delete", metavar="ID",
-        help="Удалить профиль и отключить его во всех диалогах/ветках",
+        help="Удалить профиль и отключить его во всех диалогах",
     )
     profile_view = parser.add_mutually_exclusive_group()
     profile_view.add_argument(
@@ -227,11 +203,11 @@ def parse_args() -> argparse.Namespace:
     )
     profile_view.add_argument(
         "--profile-show", action="store_true",
-        help="Показать выбранный профиль текущего диалога/ветки (null, если профиль отключён)",
+        help="Показать выбранный профиль текущего диалога (null, если профиль отключён)",
     )
     parser.add_argument(
-        "--invariants-file", type=Path, default=DEFAULT_INVARIANTS_PATH, metavar="PATH",
-        help=f"Отдельный файл обязательных правил агента (по умолчанию: {DEFAULT_INVARIANTS_PATH})",
+        "--invariants-file", type=Path, metavar="PATH",
+        help="Файл правил (по умолчанию invariants.json рядом с каталогом диалогов)",
     )
     parser.add_argument(
         "--invariants-import", type=Path, metavar="PATH",
@@ -242,6 +218,10 @@ def parse_args() -> argparse.Namespace:
         help="Показать действующие инварианты в JSON без обращения к API",
     )
     args = parser.parse_args()
+    if args.conversation is not None and not args.conversation.strip():
+        parser.error("Укажите ID или путь диалога")
+    if args.user is not None and not args.user.strip():
+        parser.error("Введите непустое сообщение")
     task_options = (
         args.task_start is not None, args.task_show, args.task_pause,
         args.task_resume, args.task_approve, args.task_continue,
@@ -250,12 +230,12 @@ def parse_args() -> argparse.Namespace:
         parser.error("Название задачи должно быть непустой строкой")
     if args.user is not None and (args.task_show or args.task_pause or args.task_continue):
         parser.error("--task-show, --task-pause и --task-continue не совмещаются с --user")
-    if args.task_show and (args.memory_show or args.profile_show or args.profile_list or args.list_branches):
+    if args.task_show and (args.memory_show or args.profile_show or args.profile_list):
         parser.error("--task-show нельзя совмещать с другими командами просмотра")
     if args.task_continue:
+        if not args.conversation:
+            parser.error("--task-continue требует --conversation ID_OR_PATH")
         args.user = CONTINUE_TASK
-    if args.profiles_db is None:
-        args.profiles_db = args.memory_db.with_name("profiles.sqlite3")
     profile_options = (
         args.profile, args.profile_clear, args.profile_import, args.profile_delete,
         args.profile_list, args.profile_show,
@@ -273,39 +253,60 @@ def parse_args() -> argparse.Namespace:
             parser.error("LAYER должен быть working или long_term")
         if any(not value.strip() for value in memory_edit[1:]):
             parser.error("Ключ и значение памяти должны быть непустыми строками")
-    branch_options = (args.branch, args.checkpoint, args.create_branch, args.from_checkpoint, args.list_branches)
     if args.invariants_show and (
-        args.user is not None or any(branch_options) or any(profile_options) or any(task_options)
-        or memory_edit or args.memory_show or args.memory_clear_working
+        args.user is not None or any(profile_options) or any(task_options)
+        or memory_edit or args.memory_show or args.memory_clear_working or args.new_conversation
     ):
         parser.error("--invariants-show совмещается только с --invariants-import и выбором файла")
-    if any(branch_options) and args.strategy != "branch":
-        parser.error("Аргументы управления ветками требуют --strategy branch")
-    if (args.create_branch is None) != (args.from_checkpoint is None):
-        parser.error("Для создания ветки укажите вместе --create-branch и --from-checkpoint")
-    if args.create_branch is not None and args.branch is not None:
-        parser.error("--create-branch уже активирует новую ветку; не совмещайте его с --branch")
-    if args.list_branches and args.user is not None:
-        parser.error("--list-branches не совмещается с --user")
     if args.user is None:
-        if not any(branch_options) and not any(profile_options) and not any(task_options) and not (
-            args.invariants_import or args.invariants_show or
+        if not any(profile_options) and not any(task_options) and not (
+            args.invariants_import or args.invariants_show or args.new_conversation
+            or args.list_conversations or args.show_conversation or
             memory_edit or args.memory_show or args.memory_clear_working
         ):
-            parser.error("Укажите --user или операцию управления ветками, памятью, профилями, задачей или инвариантами")
+            parser.error("Укажите --user или операцию с диалогами, памятью, профилями, задачей или инвариантами")
         if args.meta_prompt or args.system is not None:
             parser.error("--meta-prompt и --system требуют --user")
-    if args.strategy in ("window", "facts") and args.window_size is None:
+    if args.strategy in ("window", "facts") and args.window_size is None and args.conversation is None:
         parser.error(f"Для --strategy {args.strategy} необходимо указать --window-size")
     if args.window_size is not None and args.strategy not in ("window", "facts"):
         parser.error("--window-size требует --strategy window или facts")
-    if args.strategy is not None and (args.last_messages is not None or args.compress_every is not None):
+    if args.strategy not in (None, "summary") and (args.last_messages is not None or args.compress_every is not None):
         parser.error("--strategy нельзя совмещать с --last-messages или --compress-every")
-    if not (args.task_show or args.invariants_show) and (args.last_messages is None) != (args.compress_every is None):
-        console.print(
-            "[yellow]Предупреждение: для работы сжатия истории необходимо указать оба аргумента: "
-            "--last-messages и --compress-every. Агент продолжит работу без сжатия.[/yellow]"
-        )
+    if (args.last_messages is None) != (args.compress_every is None):
+        parser.error("Укажите вместе --last-messages и --compress-every")
+    if args.mcp_token_env and not args.mcp_url:
+        parser.error("--mcp-token-env требует --mcp-url")
+    views = (args.list_conversations, args.show_conversation)
+    if any(views) and (
+        args.user is not None or any(task_options) or any(profile_options) or memory_edit
+        or args.memory_show or args.memory_clear_working or args.invariants_import
+        or args.invariants_show or args.new_conversation or all(views) or args.mcp_url
+    ):
+        parser.error("Просмотр диалогов нельзя совмещать с другими операциями")
+    if args.list_conversations and args.conversation:
+        parser.error("--list-conversations не требует выбора диалога; используйте --data-dir")
+    requires_conversation = (
+        args.show_conversation or args.task_show or args.task_pause or args.task_resume
+        or args.task_approve or args.task_continue or args.memory_set or args.memory_delete
+        or args.memory_show or args.memory_clear_working or args.profile or args.profile_clear
+        or args.profile_show
+    )
+    if requires_conversation and not (args.conversation or args.new_conversation or args.user is not None or args.task_start):
+        parser.error("Выберите --conversation ID_OR_PATH или создайте --new-conversation")
+    if args.show_conversation and not args.conversation:
+        parser.error("--show-conversation требует --conversation ID_OR_PATH")
+    if args.conversation and re.fullmatch(r"[0-9a-f]{32}", args.conversation) is None:
+        path = Path(args.conversation).expanduser().resolve()
+        if path.suffix != ".json" or re.fullmatch(r"[0-9a-f]{32}", path.stem) is None:
+            parser.error("Путь должен указывать на файл диалога <ID>.json; старый формат истории не поддерживается")
+        if args.data_dir is not None and args.data_dir.expanduser().resolve() != path.parent:
+            parser.error("Путь диалога находится вне --data-dir")
+        args.data_dir = path.parent
+        args.conversation = path.stem
+    args.data_dir = (args.data_dir or DEFAULT_DATA_DIR).expanduser().resolve()
+    if args.conversation and not (args.data_dir / f"{args.conversation}.json").is_file():
+        parser.error("Диалог не найден. Для создания используйте --new-conversation")
     return args
 
 
@@ -458,23 +459,23 @@ def print_compression(result: CompressionResult) -> None:
     )
 
 
-def print_memory(history: HistoryManager, scope: str, snapshot: MemorySnapshot) -> None:
-    """Показать содержимое слоёв, не создавая API-клиент и не меняя историю."""
+def print_memory(conversation: Conversation, path: Path, snapshot: MemorySnapshot) -> None:
+    messages, summary, facts, _ = HistoryManager._decode_data(conversation.working_context)
     data = {
         "short_term": {
-            "scope": scope,
-            "history": str(history.path),
-            "branch": getattr(history, "active_branch", None),
-            "messages": history.get_messages(),
+            "scope": conversation.id,
+            "history": str(path),
+            "messages": [{"role": item["role"], "content": item["content"]} for item in messages],
+            "summary": summary,
+            "facts": facts,
         },
         "working": snapshot.working,
         "long_term": snapshot.long_term,
     }
-    console.print(Syntax(json.dumps(data, ensure_ascii=False, indent=2), "json", word_wrap=True))
+    print_json(data)
 
 
-def print_task_state(history: HistoryManager, *, json_only: bool = False) -> None:
-    state = history.task_state
+def print_task_state(state: TaskState | None, *, json_only: bool = False) -> None:
     if json_only:
         data = state.to_dict() if state is not None else None
         console.print(
@@ -496,31 +497,6 @@ def print_task_state(history: HistoryManager, *, json_only: bool = False) -> Non
         console.print(Panel(details, title="Состояние задачи", border_style="cyan"))
 
 
-def apply_task_options(args: argparse.Namespace, history: HistoryManager) -> None:
-    if args.task_start is not None:
-        history.start_task(args.task_start)
-    elif args.task_pause:
-        history.pause_task()
-    elif args.task_resume:
-        history.resume_task()
-    elif args.task_approve:
-        history.approve_task_plan()
-    elif args.task_continue:
-        state = history.task_state
-        if state is None:
-            raise ValueError("Задача не создана; используйте --task-start TITLE")
-        if state.stage == "done":
-            raise ValueError("Задача уже завершена; создайте новую через --task-start TITLE")
-        if state.paused:
-            raise ValueError("Задача на паузе; сначала снимите паузу через --task-resume")
-        if state.awaiting_approval:
-            raise ValueError("План ожидает утверждения; используйте --task-approve или отправьте правки через --user")
-    if args.task_show:
-        print_task_state(history, json_only=True)
-    elif args.user is None and not (args.memory_show or args.profile_list or args.profile_show):
-        print_task_state(history)
-
-
 def load_profile(path: Path) -> UserProfile:
     """Проверить импорт целиком до изменения сохранённого профиля."""
     try:
@@ -532,35 +508,6 @@ def load_profile(path: Path) -> UserProfile:
     return UserProfile.from_dict(data)
 
 
-def apply_profile_options(
-    args: argparse.Namespace, scope: str, imported: UserProfile | None,
-) -> UserProfile | None:
-    store = ProfileStore(args.profiles_db)
-    status = None
-    if imported is not None:
-        store.save(imported)
-        status = f"Профиль сохранён: {imported.id}"
-    elif args.profile_delete is not None:
-        store.delete(args.profile_delete)
-        status = f"Профиль удалён: {args.profile_delete}"
-    if args.profile is not None:
-        store.select(scope, args.profile)
-        status = f"Профиль выбран: {args.profile}"
-    elif args.profile_clear:
-        store.select(scope, None)
-        status = "Профиль текущего диалога/ветки отключён"
-    profile = store.selected(scope)
-    if args.profile_list:
-        data = [saved.to_dict() for saved in store.list()]
-        console.print(Syntax(json.dumps(data, ensure_ascii=False, indent=2), "json", word_wrap=True))
-    elif args.profile_show:
-        data = profile.to_dict() if profile is not None else None
-        console.print(Syntax(json.dumps(data, ensure_ascii=False, indent=2), "json", word_wrap=True))
-    elif status and not (args.memory_show or args.task_show):
-        console.print(Text(status))
-    return profile
-
-
 def print_tool_call(record: ToolCallRecord) -> None:
     status = "ошибка" if record.is_error else "результат получен"
     console.print(Panel(
@@ -570,160 +517,174 @@ def print_tool_call(record: ToolCallRecord) -> None:
     ))
 
 
+def print_json(value: object) -> None:
+    console.print(json.dumps(value, ensure_ascii=False, indent=2),
+                  markup=False, highlight=False, soft_wrap=True)
+
+
+def context_settings(args: argparse.Namespace, current: ContextSettings) -> ContextSettings:
+    updates = {}
+    if args.strategy is not None:
+        updates["strategy"] = args.strategy
+    if args.window_size is not None:
+        updates["window_size"] = args.window_size
+    if args.last_messages is not None:
+        updates.update(strategy="summary", last_messages=args.last_messages,
+                       compress_every=args.compress_every)
+    settings = replace(current, **updates)
+    settings.validate()
+    return settings
+
+
+def apply_task_options(args: argparse.Namespace, service: ConversationService, conversation: Conversation) -> Conversation:
+    if args.task_start is not None:
+        return service.start_task(conversation.id, args.task_start)
+    if args.task_pause:
+        return service.pause_task(conversation.id)
+    if args.task_resume:
+        return service.resume_task(conversation.id)
+    if args.task_approve:
+        return service.approve_task_plan(conversation.id)
+    if args.task_continue:
+        state = conversation.task_state
+        if state is None:
+            raise ValueError("Задача не создана; используйте --task-start TITLE")
+        if state.stage == "done":
+            raise ValueError("Задача уже завершена; создайте новую через --task-start TITLE")
+        if state.paused:
+            raise ValueError("Задача на паузе; сначала снимите паузу через --task-resume")
+        if state.awaiting_approval:
+            raise ValueError("План ожидает утверждения; используйте --task-approve или отправьте правки через --user")
+    return conversation
+
+
+def send_message(args: argparse.Namespace, conversation: Conversation, options: RequestOptions) -> None:
+    load_env(ENV_PATH)
+    token = os.environ.get("API_KEY", "").strip()
+    if not token:
+        raise ValueError("Переменная API_KEY не найдена в окружении или .env")
+    service = ConversationService(args.data_dir, token=token, invariants_path=args.invariants_file)
+    settings = context_settings(args, conversation.settings)
+    responses: list[RequestResult] = []
+    compressions: list[CompressionResult] = []
+    print_request_info(args, system=conversation.system_prompt or args.system, user=args.user)
+    with console.status("[bold cyan]Ожидание ответа модели…", spinner="dots"):
+        result = service.send(
+            conversation.id, args.user, system_prompt=args.system or "", options=options,
+            settings=settings, expected_settings=conversation.settings,
+            on_response=responses.append, on_compression=compressions.append,
+        )
+    for compression in compressions:
+        print_compression(compression)
+    turn = result.turns[-1]
+    for tool_call in turn.tool_calls:
+        print_tool_call(tool_call)
+    for index, response in enumerate(responses):
+        is_meta = len(responses) == 2 and index == 0
+        print_response(
+            response, "text" if is_meta else args.response_format,
+            title="Сгенерированный промпт" if is_meta else "Ответ",
+            context_limit=args.context_limit, max_tokens=args.max_tokens,
+        )
+    if not responses:
+        for title, content in (("Сгенерированный промпт", turn.meta_prompt), ("Ответ", turn.answer)):
+            if content is not None:
+                console.print(Panel(Markdown(content), title=title))
+    print_task_state(result.task_state)
+    if turn.error:
+        raise ValueError(turn.error)
+
+
 def main() -> None:
     args = parse_args()
-    if args.mcp_token_env and not args.mcp_url:
-        raise ValueError("--mcp-token-env требует --mcp-url")
-    mcp_servers = (MCPServer("cli", "MCP", args.mcp_url, args.mcp_token_env, enabled=True),) if args.mcp_url else ()
-    invariant_store = InvariantStore(args.invariants_file)
-    if args.invariants_import is not None:
+    options = RequestOptions(
+        meta_prompt=args.meta_prompt, temperature=args.temperature, max_tokens=args.max_tokens,
+        model=args.model, stop_sequences=args.stop_sequences, response_format=args.response_format,
+    )
+    options.validate()
+    imported_profile = load_profile(args.profile_import) if args.profile_import else None
+    imported_invariants = None
+    if args.invariants_import:
         try:
             imported_invariants = InvariantSet.from_json(args.invariants_import.read_text(encoding="utf-8-sig"))
         except FileNotFoundError as error:
             raise ValueError(f"Файл инвариантов не найден: {args.invariants_import}") from error
-        except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as error:
-            raise ValueError(f"Некорректный JSON инвариантов: {args.invariants_import}") from error
-        invariant_store.save(imported_invariants)
-        if not (args.invariants_show or args.memory_show or args.task_show or args.profile_list or args.profile_show):
-            console.print(Text(f"Инварианты сохранены: {args.invariants_file}"))
-    invariants = invariant_store.load() if args.user is not None or args.invariants_show else None
+    service = ConversationService(args.data_dir, token=None, invariants_path=args.invariants_file)
+    if imported_invariants is not None:
+        service.invariants.save(imported_invariants)
     if args.invariants_show:
-        console.print(Syntax(json.dumps(invariants.to_dict(), ensure_ascii=False, indent=2), "json", word_wrap=True))
+        print_json(service.get_invariants().to_dict())
         return
-    imported = load_profile(args.profile_import) if args.profile_import is not None else None
-    history = None
-    if args.strategy == "branch":
-        history = BranchHistoryManager(args.history, branch=args.branch)
-        # Проверяем имя до запроса, чтобы не тратить API на заведомо неверную команду.
-        if args.checkpoint is not None and args.checkpoint in history.list_checkpoints():
-            raise ValueError(f"Checkpoint уже существует: {args.checkpoint}")
-        if args.create_branch is not None:
-            history.create_branch(args.create_branch, from_checkpoint=args.from_checkpoint)
-        if not (args.memory_show or args.profile_list or args.profile_show or args.task_show):
-            console.print(Text(f"Активная ветка: {history.active_branch}"))
-        if args.list_branches:
-            console.print(Text("Ветки: " + ", ".join(history.list_branches())))
-            console.print(Text("Checkpoints: " + (", ".join(history.list_checkpoints()) or "нет")))
-    task_action = (
-        args.task_start is not None or args.task_show or args.task_pause
-        or args.task_resume or args.task_approve or args.task_continue
-    )
-    if task_action:
-        history = history or HistoryManager(args.history)
-        apply_task_options(args, history)
-    if args.user is None and args.checkpoint is not None:
-        history.create_checkpoint(args.checkpoint)
-        if not args.task_show:
-            console.print(Text(f"Checkpoint сохранён: {args.checkpoint}"))
-    memory_action = args.memory_set or args.memory_delete or args.memory_clear_working or args.memory_show
-    profile_action = (
-        args.profile is not None or args.profile_clear or imported is not None
-        or args.profile_delete is not None or args.profile_list or args.profile_show
-    )
-    if args.user is None and not (memory_action or profile_action):
+    if args.list_conversations:
+        print_json([
+            {"id": item.id, "title": item.title, "path": str(service.store.path(item.id))}
+            for item in service.list_conversations()
+        ])
+        if service.storage_errors:
+            raise ConversationStorageError("\n".join(service.storage_errors))
         return
 
-    scope = cli_memory_scope(args.history, getattr(history, "active_branch", None))
-    profile = apply_profile_options(args, scope, imported) if args.user is not None or profile_action else None
-    if args.user is None and not memory_action:
+    conversation = service.get(args.conversation) if args.conversation else None
+    if conversation is None and (args.new_conversation or args.user is not None or args.task_start is not None):
+        conversation = service.create()
+    if args.show_conversation:
+        print_json(asdict(conversation))
         return
-    history = history or HistoryManager(args.history)
-    store = MemoryStore(args.memory_db)
+    if args.user is not None:
+        # Validate common rules before making local changes or loading the API environment.
+        service.get_invariants()
+    if imported_profile is not None:
+        if conversation is not None:
+            service.save_profile(conversation.id, imported_profile)
+        else:
+            service.profiles.save(imported_profile)
+    if args.profile_delete:
+        if conversation is not None:
+            service.delete_profile(conversation.id, args.profile_delete)
+        else:
+            service.profiles.delete(args.profile_delete)
+    if args.profile_list:
+        print_json([profile.to_dict() for profile in service.profiles.list()])
+    if conversation is None:
+        return
+
+    conversation = apply_task_options(args, service, conversation)
+    if args.profile:
+        service.select_profile(conversation.id, args.profile)
+    elif args.profile_clear:
+        service.select_profile(conversation.id, None)
     if args.memory_set:
-        layer, key, value = args.memory_set
-        store.remember(scope, layer, key, value)
-        if not args.task_show:
-            console.print(Text(f"Память сохранена: {layer}, {key}"))
+        service.remember_memory(conversation.id, *args.memory_set)
     elif args.memory_delete:
-        layer, key = args.memory_delete
-        store.forget(scope, layer, key)
-        if not args.task_show:
-            console.print(Text(f"Запись памяти удалена: {layer}, {key}"))
+        service.forget_memory(conversation.id, *args.memory_delete)
     elif args.memory_clear_working:
-        store.clear_working(scope)
-        if not args.task_show:
-            console.print(Text("Рабочая память текущего диалога/ветки очищена"))
-    memory = store.snapshot(scope)
-    if args.memory_show:
-        print_memory(history, scope, memory)
-    if args.user is None:
-        return
-    load_env(ENV_PATH)
-
-    api_key = os.environ.get("API_KEY")
-    if not api_key:
-        raise SystemExit("Переменная API_KEY не найдена в .env")
-
-    agent = Agent(
-        api_key, history_path=args.history,
-        last_messages=args.last_messages, compress_every=args.compress_every,
-        on_compression=print_compression,
-        strategy=args.strategy, window_size=args.window_size,
-        memory=memory, profile=profile, invariants=invariants,
-        mcp_servers=mcp_servers, on_tool_call=print_tool_call,
-    )
-    try:
-        _run_agent(args, agent)
-    finally:
-        agent.close()
-
-
-def _run_agent(args: argparse.Namespace, agent: Agent) -> None:
-    saved_system = agent.history.get_system_prompt()
-    if saved_system is not None:
-        args.system = saved_system
-    request_options = {
-        "user": args.user,
-        "model": args.model,
-        "system": args.system,
-        "max_tokens": args.max_tokens,
-        "temperature": args.temperature,
-        "stop_sequences": args.stop_sequences,
-        "response_format": args.response_format,
-    }
-
-    if args.meta_prompt:
-        print_request_info(
-            args,
-            system=META_PROMPT_SYSTEM,
-            user=args.user,
-            stage="1/2 — генерация промпта",
-            response_format="text",
-        )
-        with console.status("[bold cyan]Генерация промпта и выполнение запроса…", spinner="dots"):
-            meta_result, result = agent.request_with_meta_prompt(**request_options)
-        if not meta_result.refused:
-            print_response(
-                meta_result, "text", title="Сгенерированный промпт",
-                context_limit=args.context_limit, max_tokens=args.max_tokens,
-            )
-            console.print()
-
-            print_request_info(
-                args,
-                system=args.system,
-                user=meta_result.content,
-                stage="2/2 — основной запрос",
-            )
+        service.clear_working_memory(conversation.id)
+    if args.mcp_url:
+        service.mcp_servers.save(MCPServer("cli", "MCP", args.mcp_url, args.mcp_token_env, enabled=True))
+    if args.task_show:
+        print_task_state(conversation.task_state, json_only=True)
+    elif args.profile_show:
+        profile = service.get_profile(conversation.id)
+        print_json(profile.to_dict() if profile is not None else None)
+    elif args.memory_show:
+        print_memory(conversation, service.store.path(conversation.id), service.get_memory(conversation.id))
+    elif not args.profile_list:
+        console.print(Text(f"Диалог: {conversation.id}\nФайл: {service.store.path(conversation.id)}"), soft_wrap=True)
+        if args.user is None:
+            print_task_state(conversation.task_state)
+    if args.user is not None:
+        send_message(args, conversation, options)
     else:
-        print_request_info(args, system=args.system, user=args.user)
-        with console.status("[bold cyan]Ожидание ответа модели…", spinner="dots"):
-            result = agent.request(**request_options)
-
-    print_response(
-        result, args.response_format,
-        context_limit=args.context_limit, max_tokens=args.max_tokens,
-    )
-    print_task_state(agent.history)
-    if args.checkpoint is not None:
-        agent.history.create_checkpoint(args.checkpoint)
-        console.print(Text(f"Checkpoint сохранён: {args.checkpoint}"))
+        settings = context_settings(args, conversation.settings)
+        if settings != conversation.settings:
+            service.update_settings(conversation.id, settings, expected_settings=conversation.settings)
 
 
 def run() -> None:
     """Запустить CLI с выводом ожидаемых ошибок без traceback."""
     try:
         main()
-    except (ValueError, OSError, MemoryStorageError, ProfileStorageError, InvariantStorageError,
-            MCPConnectionError, MCPToolError) as error:
+    except (ValueError, OSError, KeyError, MemoryStorageError, ProfileStorageError, InvariantStorageError,
+            MCPConnectionError, MCPToolError, MCPStorageError, ConversationBusyError,
+            ConversationStorageError) as error:
         raise SystemExit(str(error)) from error

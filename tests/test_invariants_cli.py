@@ -10,6 +10,7 @@ from rich.console import Console
 
 from llm_agent.agent import Agent
 from llm_agent.cli import main, parse_args, run
+from llm_agent.service import ConversationService
 from llm_agent.invariants import Invariant, InvariantSet, InvariantStore
 from tests.helpers import completion
 
@@ -29,8 +30,11 @@ class InvariantCliTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.directory = Path(directory.name)
-        self.history = self.directory / "history.json"
-        self.memory_db = self.directory / "memory.sqlite3"
+        self.data_dir = self.directory / "conversations"
+        self.service = ConversationService(self.data_dir, token=None)
+        self.conversation = self.service.create()
+        self.history = self.service.store.path(self.conversation.id)
+        self.memory_db = self.data_dir / "memory.sqlite3"
         self.invariants_file = self.directory / "invariants.json"
         self.source = self.directory / "import.json"
         self.rules = InvariantSet((Invariant("stack", "Использовать только Python"),))
@@ -41,7 +45,7 @@ class InvariantCliTests(unittest.TestCase):
     def run_cli(self, *options, entrypoint=main):
         output = io.StringIO()
         arguments = [
-            "main.py", "--history", str(self.history), "--memory-db", str(self.memory_db),
+            "main.py", "--history", str(self.history), "--data-dir", str(self.data_dir),
             "--invariants-file", str(self.invariants_file), *options,
         ]
         with patch("sys.argv", arguments), patch(
@@ -62,9 +66,20 @@ class InvariantCliTests(unittest.TestCase):
             self.assertEqual(json.loads(shown), self.rules.to_dict())
             self.assertEqual(InvariantStore(self.invariants_file).load(), self.rules)
             self.assertEqual(json.loads(self.run_cli("--invariants-show")), self.rules.to_dict())
-        self.assertFalse(self.history.exists())
-        self.assertFalse(self.memory_db.exists())
-        self.assertFalse(self.memory_db.with_name("profiles.sqlite3").exists())
+        self.assertTrue(self.history.exists())
+        self.load_env.assert_not_called()
+        self.client.assert_not_called()
+
+    def test_global_invariants_use_data_directory_default_without_selector(self):
+        output = io.StringIO()
+        with patch.dict("os.environ", {}, clear=True), patch("sys.argv", [
+            "main.py", "--data-dir", str(self.data_dir),
+            "--invariants-import", self.write_import(), "--invariants-show",
+        ]), patch("llm_agent.cli.console", Console(file=output, width=240, color_system=None)):
+            main()
+        self.assertEqual(json.loads(output.getvalue()), self.rules.to_dict())
+        self.assertEqual(InvariantStore(self.invariants_file).load(), self.rules)
+        self.assertEqual(len(self.service.list_conversations()), 1)
         self.load_env.assert_not_called()
         self.client.assert_not_called()
 
@@ -94,7 +109,7 @@ class InvariantCliTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as error:
             self.run_cli("--user", "Объясни Python", entrypoint=run)
         self.assertIn("инварианты", str(error.exception))
-        self.assertFalse(self.history.exists())
+        self.assertTrue(self.history.exists())
         self.assertEqual(self.invariants_file.read_text(encoding="utf-8"), "not JSON")
         self.client.assert_not_called()
         self.load_env.assert_not_called()
@@ -104,7 +119,7 @@ class InvariantCliTests(unittest.TestCase):
     def test_each_request_reloads_separate_rules(self):
         replacement = InvariantSet((Invariant("stack", "Использовать Python и SQLite"),))
         self.create.side_effect = [verdict(), reply("Ответ"), verdict()] * 2
-        with patch.dict("os.environ", {"API_KEY": "test"}), patch("llm_agent.cli.Agent", wraps=Agent) as agent:
+        with patch.dict("os.environ", {"API_KEY": "test"}), patch("llm_agent.service.Agent", wraps=Agent) as agent:
             self.run_cli("--invariants-import", self.write_import(), "--user", "Предложи архитектуру")
             InvariantStore(self.invariants_file).save(replacement)
             self.run_cli("--user", "Продолжи")

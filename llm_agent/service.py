@@ -6,6 +6,7 @@
 
 import threading
 import time
+from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from copy import deepcopy
 from pathlib import Path
@@ -17,7 +18,7 @@ from openai import (
     BadRequestError, RateLimitError,
 )
 
-from .agent import Agent
+from .agent import Agent, CompressionResult, RequestResult, DEFAULT_MODEL
 from .context_strategy import FactsStrategy, WindowStrategy
 from .history import HistoryManager, TokenUsage
 from .invariants import InvariantSet, InvariantStorageError, InvariantStore
@@ -426,6 +427,8 @@ class ConversationService:
         system_prompt: str = "", options: RequestOptions = RequestOptions(),
         settings: ContextSettings | None = None,
         expected_settings: ContextSettings | None = None,
+        on_response: Callable[[RequestResult], None] | None = None,
+        on_compression: Callable[[CompressionResult], None] | None = None,
     ) -> Conversation:
         if not isinstance(user, str) or not user.strip():
             raise ValueError("Введите сообщение")
@@ -448,6 +451,8 @@ class ConversationService:
                     raise TaskStateError(PLAN_APPROVAL_REQUIRED)
                 if task.stage != TaskStage.DONE and options.meta_prompt:
                     raise TaskStateError("Отключите мета-промпт для работы с активной задачей")
+                if task.stage != TaskStage.DONE and options.response_format != "text":
+                    raise TaskStateError("Выберите текстовый формат для работы с активной задачей")
             if settings is not None:
                 self._apply_settings(conversation, settings, expected_settings)
             if conversation.started and system_prompt and system_prompt != conversation.system_prompt:
@@ -462,6 +467,7 @@ class ConversationService:
             started_at = time.perf_counter()
             history = None
             agent = None
+            compressions: list[CompressionResult] = []
             try:
                 if not self.token_available:
                     conversation.turns[-1].status = "error"
@@ -481,6 +487,7 @@ class ConversationService:
                     "invariants": self.get_invariants(),
                     "mcp_servers": self.mcp_servers.list(),
                     "on_tool_call": history.record_tool_call,
+                    "on_compression": compressions.append,
                 }
                 if settings.strategy in ("window", "facts"):
                     agent_options.update(strategy=settings.strategy, window_size=settings.window_size)
@@ -488,11 +495,14 @@ class ConversationService:
                     agent_options.update(last_messages=settings.last_messages, compress_every=settings.compress_every)
                 agent = Agent(self._token, **agent_options)
                 request = agent.request_with_meta_prompt if options.meta_prompt else agent.request
-                request(
+                result = request(
                     user.strip(), system=conversation.system_prompt,
                     temperature=options.temperature, max_tokens=options.max_tokens,
+                    model=options.model or DEFAULT_MODEL,
+                    stop_sequences=options.stop_sequences,
+                    response_format=options.response_format,
                 )
-                return deepcopy(history.conversation)
+                completed = deepcopy(history.conversation)
             except Exception as error:
                 if history is not None:
                     conversation = deepcopy(history.pending_snapshot or history.conversation)
@@ -514,3 +524,14 @@ class ConversationService:
                 if agent is not None:
                     with suppress(Exception):
                         agent.close()
+            # Ошибки представления результата не меняют уже сохранённый ход.
+            if on_compression is not None:
+                for compression in compressions:
+                    on_compression(compression)
+            if on_response is not None:
+                responses = result if isinstance(result, tuple) else (result,)
+                if len(responses) == 2 and responses[0] is responses[1]:
+                    responses = responses[:1]
+                for response in responses:
+                    on_response(response)
+            return completed

@@ -16,6 +16,9 @@ from .models import ContextSettings, Conversation, RequestOptions, Turn
 from .tool_events import ToolCallRecord
 
 
+DEFAULT_DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "conversations"
+
+
 class ConversationStorageError(RuntimeError):
     """Не удалось прочесть или сохранить состояние диалога."""
 

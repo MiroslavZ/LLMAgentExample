@@ -19,7 +19,6 @@ from llm_agent.memory import (
     MemorySnapshot,
     MemoryStorageError,
     MemoryStore,
-    cli_memory_scope,
 )
 from llm_agent.models import ContextSettings, RequestOptions, Turn
 from llm_agent.service import ConversationService
@@ -171,19 +170,6 @@ class MemoryStoreTests(unittest.TestCase):
                 with self.assertRaisesRegex(MemoryStorageError, "версия"):
                     self.store.snapshot("задача")
                 self.assertEqual(self.path.read_bytes(), original)
-
-    def test_cli_scopes_are_stable_for_paths_and_distinct_for_branches(self):
-        history = self.path.parent / "history.json"
-        alias = self.path.parent / "несуществующий" / ".." / "history.json"
-        self.assertEqual(cli_memory_scope(history), cli_memory_scope(alias))
-        scopes = {
-            cli_memory_scope(history),
-            cli_memory_scope(history, "первая"),
-            cli_memory_scope(history, "вторая"),
-            cli_memory_scope(self.path.parent / "other.json"),
-        }
-        self.assertEqual(len(scopes), 4)
-
 
 class AgentMemoryTests(unittest.TestCase):
     def setUp(self):

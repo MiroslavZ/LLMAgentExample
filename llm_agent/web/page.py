@@ -106,6 +106,9 @@ class ChatPage:
                         self.title = ui.label().classes("chat-title")
                         self.subtitle = ui.label().classes("chat-subtitle")
                     ui.badge("DeepSeek", color="white", text_color="grey-8").props("outline").classes("model-badge")
+                    ui.button(icon="terminal", on_click=self.show_cli_command).props(
+                        'flat round aria-label="Продолжить в CLI"'
+                    ).tooltip("Продолжить в CLI")
                     ui.button(icon="person_outline", on_click=self.profile_panel.open).props(
                         'flat round aria-label="Профили пользователя"'
                     ).tooltip("Профили пользователя")
@@ -202,6 +205,18 @@ class ChatPage:
             with ui.row().classes("w-full justify-end"):
                 ui.button("Отмена", on_click=dialog.close).props("flat no-caps")
                 ui.button("Удалить", on_click=confirm, color="negative").props("unelevated no-caps")
+        dialog.on("hide", dialog.delete)
+        dialog.open()
+
+    def show_cli_command(self) -> None:
+        path = self.service.store.path(self.conversation_id)
+        command = f'python -m llm_agent --conversation "{path}" --user "Продолжим"'
+        with ui.dialog() as dialog, ui.card().classes("w-full max-w-2xl"):
+            ui.label("Продолжить в CLI").classes("text-lg font-semibold")
+            ui.label("Выполните команду в каталоге проекта с активированным Python-окружением. Веб можно закрыть.")
+            ui.code(command, language="shell").classes("w-full")
+            ui.label("Замените «Продолжим» своим сообщением. Ответ появится в этом же диалоге.")
+            ui.button("Закрыть", on_click=dialog.close).props("flat")
         dialog.on("hide", dialog.delete)
         dialog.open()
 

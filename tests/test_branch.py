@@ -1,5 +1,3 @@
-import contextlib
-import io
 import json
 import tempfile
 import unittest
@@ -7,12 +5,10 @@ from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 
-from rich.console import Console
 
 from llm_agent.agent import Agent, META_PROMPT_SYSTEM
 from llm_agent.branch_history import BranchHistoryManager
 from llm_agent.history import DialogueUsage, HistoryManager, TokenUsage
-from llm_agent.cli import main, parse_args
 from tests.helpers import completion
 
 
@@ -29,18 +25,6 @@ class BranchTests(unittest.TestCase):
 
     def agent(self, branch=None):
         return Agent("test", self.path, strategy="branch", branch=branch)
-
-    def run_cli(self, *options):
-        output = io.StringIO()
-        with patch("sys.argv", [
-            "main.py", "--history", str(self.path),
-            "--memory-db", str(self.path.with_suffix(".sqlite3")),
-            "--invariants-file", str(self.path.with_name("invariants.json")), *options,
-        ]), patch(
-            "llm_agent.cli.console", Console(file=output, width=180, color_system=None),
-        ):
-            main()
-        return output.getvalue()
 
     def test_two_branches_from_same_checkpoint_are_isolated_after_restart(self):
         agent = self.agent()
@@ -305,43 +289,7 @@ class BranchTests(unittest.TestCase):
         self.assertEqual(history.get_messages()[-1]["content"], "Исходное")
         self.assertEqual(history.facts, {"goal": "Цель"})
 
-    def test_cli_management_needs_neither_env_nor_api(self):
-        with patch("llm_agent.cli.load_env") as load_env:
-            self.run_cli("--strategy", "branch", "--checkpoint", "start")
-            self.run_cli("--strategy", "branch", "--create-branch", "a", "--from-checkpoint", "start")
-            self.run_cli("--strategy", "branch", "--create-branch", "b", "--from-checkpoint", "start")
-            self.run_cli("--strategy", "branch", "--branch", "a")
-            output = self.run_cli("--strategy", "branch", "--list-branches")
-            load_env.assert_not_called()
-        self.client.assert_not_called()
-        self.assertIn("Активная ветка: a", output)
-        self.assertIn("Ветки: main, a, b", output)
-        self.assertIn("Checkpoints: start", output)
-        self.assertEqual(BranchHistoryManager(self.path).active_branch, "a")
-
-    def test_cli_checkpoint_after_successful_request_and_branch_selection(self):
-        with patch("llm_agent.cli.load_env"), patch.dict("os.environ", {"API_KEY": "test"}):
-            self.run_cli("--strategy", "branch", "--user", "Общее", "--checkpoint", "start")
-            self.run_cli(
-                "--strategy", "branch", "--create-branch", "a", "--from-checkpoint", "start",
-                "--user", "Только A",
-            )
-            self.run_cli("--strategy", "branch", "--branch", "main", "--user", "Только main")
-            sent = self.create.call_args.kwargs["messages"]
-            self.assertEqual([m["content"] for m in sent], ["Общее", "Ответ", "Только main"])
-            self.create.reset_mock()
-            with self.assertRaises(ValueError):
-                self.run_cli("--strategy", "branch", "--user", "Не отправлять", "--checkpoint", "start")
-            self.create.assert_not_called()
-            self.create.side_effect = RuntimeError("API error")
-            with self.assertRaises(RuntimeError):
-                self.run_cli("--strategy", "branch", "--user", "Ошибка", "--checkpoint", "failed")
-        history = BranchHistoryManager(self.path)
-        self.assertEqual(history.list_checkpoints(), ["start"])
-        history.create_branch("b", from_checkpoint="start")
-        self.assertEqual([m["content"] for m in history.get_messages()], ["Общее", "Ответ"])
-
-    def test_agent_and_cli_validation(self):
+    def test_agent_validation(self):
         for options in (
             {"strategy": "branch", "window_size": 2},
             {"strategy": "branch", "last_messages": 2},
@@ -351,28 +299,6 @@ class BranchTests(unittest.TestCase):
             with self.subTest(options=options), self.assertRaises(ValueError):
                 Agent("test", self.path, **options)
         self.assertFalse(self.path.exists())
-        with patch("sys.argv", ["main.py", "--strategy", "branch", "--user", "Запрос"]):
-            args = parse_args()
-        self.assertEqual(args.strategy, "branch")
-        self.assertIsNone(args.window_size)
-        for options in (
-            [], ["--strategy", "branch"], ["--branch", "main"],
-            ["--checkpoint", "start"], ["--list-branches"],
-            ["--strategy", "branch", "--create-branch", "a"],
-            ["--strategy", "branch", "--from-checkpoint", "start"],
-            ["--strategy", "branch", "--checkpoint", " "],
-            ["--strategy", "branch", "--user", "Запрос", "--window-size", "2"],
-            ["--strategy", "branch", "--user", "Запрос", "--last-messages", "2"],
-            ["--strategy", "branch", "--user", "Запрос", "--compress-every", "2"],
-            ["--strategy", "branch", "--user", "Запрос", "--list-branches"],
-            ["--strategy", "branch", "--branch", "main", "--meta-prompt"],
-            ["--strategy", "branch", "--branch", "main", "--system", "Правила"],
-            ["--strategy", "branch", "--branch", "main", "--create-branch", "a", "--from-checkpoint", "start"],
-        ):
-            with self.subTest(options=options), patch("sys.argv", ["main.py", *options]):
-                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
-                    parse_args()
-                self.assertEqual(error.exception.code, 2)
 
 
 if __name__ == "__main__":

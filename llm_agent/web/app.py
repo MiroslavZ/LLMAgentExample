@@ -8,11 +8,11 @@ from dotenv import load_dotenv
 from nicegui import ui
 
 from ..service import ConversationService
+from ..storage import DEFAULT_DATA_DIR
 from .jobs import RequestRunner
 from .page import ChatPage
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DATA_DIR = PROJECT_ROOT / "data" / "conversations"
 
 
 def create_app(service: ConversationService, *, token_available: bool) -> RequestRunner:

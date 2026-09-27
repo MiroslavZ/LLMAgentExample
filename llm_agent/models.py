@@ -1,4 +1,4 @@
-"""Модели веб-диалога; не зависят от NiceGUI и клиента модели."""
+"""Общие модели диалога; не зависят от интерфейса и клиента модели."""
 
 import math
 from dataclasses import dataclass, field
@@ -37,6 +37,9 @@ class RequestOptions:
     meta_prompt: bool = False
     temperature: float | None = None
     max_tokens: int | None = None
+    model: str | None = None
+    stop_sequences: list[str] | None = None
+    response_format: str = "text"
 
     def validate(self) -> None:
         if type(self.meta_prompt) is not bool:
@@ -51,6 +54,17 @@ class RequestOptions:
             type(self.max_tokens) is not int or self.max_tokens <= 0
         ):
             raise ValueError("Лимит токенов должен быть положительным целым числом")
+        if self.model is not None and (
+            not isinstance(self.model, str) or not self.model.strip()
+        ):
+            raise ValueError("Название модели должно быть непустой строкой")
+        if self.stop_sequences is not None and (
+            not isinstance(self.stop_sequences, list)
+            or any(not isinstance(value, str) or not value for value in self.stop_sequences)
+        ):
+            raise ValueError("Стоп-последовательности должны быть списком непустых строк")
+        if self.response_format not in ("text", "object", "schema"):
+            raise ValueError("Выберите поддерживаемый формат ответа")
 
 
 TurnStatus = Literal["running", "completed", "error", "partial", "interrupted"]

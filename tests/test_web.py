@@ -74,6 +74,21 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("API_KEY" in label for label in self.labels(page.banner)))
         self.assertEqual(len(self.service.list_conversations()), 1)
 
+    async def test_cli_command_tracks_selected_conversation_and_uses_quoted_path(self):
+        with self.client:
+            page = self.build_page()
+            other = self.service.create()
+            page.select(other.id)
+        button = next(element for element in self.client.content.descendants()
+                      if isinstance(element, ui.button) and element.props.get('icon') == 'terminal')
+        await self.click_button(button)
+        dialog = next(element for element in self.client.elements.values()
+                      if isinstance(element, ui.dialog) and element.value)
+        code = next(element for element in dialog.descendants() if isinstance(element, ui.code))
+        self.assertIn(f'--conversation "{self.service.store.path(other.id)}"', code.content)
+        self.assertNotIn(self.conversation.id, code.content)
+        self.assertIn('--user "Продолжим"', code.content)
+
     async def click_button(self, button):
         handler = next(listener.handler for listener in button._event_listeners.values()
                        if listener.type == "click")

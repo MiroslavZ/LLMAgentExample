@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import re
+import sys
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -74,6 +75,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--system", help="Системный промпт диалога (сохраняется, если ещё не задан)")
     parser.add_argument("--user", help="Текст запроса; необязателен для управления диалогами, памятью, профилями, задачей и инвариантами")
+    parser.add_argument("--batch", action="store_true", help="Один запрос для планировщика: --conversation и --user; результат в JSON")
     parser.add_argument("--mcp-url", help="Сохранить общий MCP-сервер для CLI и веба (ID: cli)")
     parser.add_argument("--mcp-token-env", default="", help="Имя переменной с MCP Bearer-токеном (не сам токен)")
     task_action = parser.add_mutually_exclusive_group()
@@ -218,6 +220,19 @@ def parse_args() -> argparse.Namespace:
         help="Показать действующие инварианты в JSON без обращения к API",
     )
     args = parser.parse_args()
+    if args.batch:
+        if not args.conversation or args.user is None:
+            parser.error("--batch требует явные --conversation и --user")
+        forbidden = (
+            args.new_conversation, args.list_conversations, args.show_conversation,
+            args.memory_set, args.memory_delete, args.memory_clear_working, args.memory_show,
+            args.profile, args.profile_clear, args.profile_import, args.profile_delete,
+            args.profile_list, args.profile_show, args.invariants_import, args.invariants_show,
+            args.task_start, args.task_show, args.task_pause, args.task_resume,
+            args.task_approve, args.task_continue, args.mcp_url, args.mcp_token_env,
+        )
+        if any(value is not None and value is not False and value != "" for value in forbidden):
+            parser.error("--batch нельзя совмещать с командами управления или просмотра")
     if args.conversation is not None and not args.conversation.strip():
         parser.error("Укажите ID или путь диалога")
     if args.user is not None and not args.user.strip():
@@ -565,6 +580,22 @@ def send_message(args: argparse.Namespace, conversation: Conversation, options: 
         raise ValueError("Переменная API_KEY не найдена в окружении или .env")
     service = ConversationService(args.data_dir, token=token, invariants_path=args.invariants_file)
     settings = context_settings(args, conversation.settings)
+    if args.batch:
+        result = service.send(
+            conversation.id, args.user, system_prompt=args.system or "", options=options,
+            settings=settings, expected_settings=conversation.settings,
+        )
+        turn = result.turns[-1]
+        payload = json.dumps({"conversation_id": result.id, **asdict(turn)}, ensure_ascii=False) + "\n"
+        # Перенаправленный stdout Windows может иметь ANSI-кодировку: JSONL всегда UTF-8.
+        if hasattr(sys.stdout, "buffer"):
+            sys.stdout.buffer.write(payload.encode("utf-8"))
+            sys.stdout.buffer.flush()
+        else:
+            sys.stdout.write(payload)
+        if turn.status != "completed" or turn.error or any(call.is_error for call in turn.tool_calls):
+            raise SystemExit(1)
+        return
     responses: list[RequestResult] = []
     compressions: list[CompressionResult] = []
     print_request_info(args, system=conversation.system_prompt or args.system, user=args.user)
@@ -668,7 +699,7 @@ def main() -> None:
         print_json(profile.to_dict() if profile is not None else None)
     elif args.memory_show:
         print_memory(conversation, service.store.path(conversation.id), service.get_memory(conversation.id))
-    elif not args.profile_list:
+    elif not args.profile_list and not args.batch:
         console.print(Text(f"Диалог: {conversation.id}\nФайл: {service.store.path(conversation.id)}"), soft_wrap=True)
         if args.user is None:
             print_task_state(conversation.task_state)

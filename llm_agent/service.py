@@ -31,6 +31,7 @@ from .profile import ProfileStorageError, ProfileStore, UserProfile
 from .storage import ConversationBusyError, ConversationStorageError, ConversationStore
 from .task_state import CONTINUE_TASK, PLAN_APPROVAL_REQUIRED, TaskStage, TaskState, TaskStateError
 from .tool_events import ToolCallRecord
+from .observations import ObservationReader, is_observation
 
 
 class _ConversationHistory(HistoryManager):
@@ -489,6 +490,12 @@ class ConversationService:
                     "on_tool_call": history.record_tool_call,
                     "on_compression": compressions.append,
                 }
+                if any(server.enabled for server in agent_options["mcp_servers"]) or any(
+                    is_observation(call) for turn in conversation.turns for call in turn.tool_calls
+                ) or any(
+                    turn.status in ("error", "partial", "interrupted") for turn in conversation.turns
+                ):
+                    agent_options["observations"] = ObservationReader(conversation)
                 if settings.strategy in ("window", "facts"):
                     agent_options.update(strategy=settings.strategy, window_size=settings.window_size)
                 elif settings.strategy == "summary":

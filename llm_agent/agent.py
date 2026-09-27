@@ -17,6 +17,7 @@ from .profile import UserProfile
 from .mcp_config import MCPServer
 from .mcp_tools import MAX_TOOL_CALLS, MAX_TOOL_ROUNDS, MCP_SYSTEM, MCPToolCatalog, MCPToolError
 from .tool_events import ToolCallRecord
+from .observations import OBSERVATIONS_SYSTEM, TOOL_NAME, ObservationReader
 from .task_state import (
     CONTINUE_TASK, PLAN_APPROVAL_REQUIRED, STAGE_ACTIONS,
     TaskJSONError, TaskResponseError, TaskStage, TaskState, TaskStateError,
@@ -114,6 +115,7 @@ class Agent:
         invariants: InvariantSet | None = None,
         mcp_servers: Sequence[MCPServer] = (),
         on_tool_call: Callable[[ToolCallRecord], None] | None = None,
+        observations: ObservationReader | None = None,
     ) -> None:
         if strategy is not None and strategy not in SUPPORTED_STRATEGIES:
             raise ValueError(f"Неизвестная стратегия: {strategy}")
@@ -146,6 +148,7 @@ class Agent:
         for server in self.mcp_servers:
             server.validate()
         self.on_tool_call = on_tool_call
+        self.observations = observations
         self.history = history if history is not None else (
             BranchHistoryManager(history_path, branch=branch) if strategy == "branch"
             else HistoryManager(history_path, strategy=self._strategy)
@@ -383,17 +386,25 @@ class Agent:
         started = time.perf_counter()
         servers = [server for server in self.mcp_servers if server.enabled] if use_tools else []
         catalog = MCPToolCatalog.discover(servers)
-        if catalog.functions:
-            request.update(tools=catalog.functions, tool_choice="auto")
-            request["messages"] = [{"role": "system", "content": MCP_SYSTEM}, *request["messages"]]
+        reader = self.observations if use_tools else None
+        functions = [*catalog.functions]
+        instructions = MCP_SYSTEM if catalog.functions else ""
+        if reader is not None:
+            functions.append(reader.function)
+            instructions += "\n" + OBSERVATIONS_SYSTEM
+        if len(functions) > 128:
+            raise MCPToolError("Модель поддерживает до 128 инструментов. Отключите лишние MCP-серверы.")
+        if functions:
+            request.update(tools=functions, tool_choice="auto")
+            request["messages"] = [{"role": "system", "content": instructions}, *request["messages"]]
         records: list[ToolCallRecord] = []
         seen_ids: set[str] = set()
         for round_number in range(MAX_TOOL_ROUNDS + 1):
             response = self._client.chat.completions.create(**request)
             choice = response.choices[0] if response.choices else None
             calls = choice.message.tool_calls if choice is not None else None
-            if not catalog.functions or not calls:
-                if catalog.functions and choice is not None and choice.finish_reason == "tool_calls":
+            if not functions or not calls:
+                if functions and choice is not None and choice.finish_reason == "tool_calls":
                     self.history.record_response_usage(self._token_usage(response))
                     raise MCPToolError("Модель запросила инструменты, но не передала вызовы.")
                 return response, time.perf_counter() - started, tuple(records), None
@@ -419,7 +430,11 @@ class Agent:
                     return response, elapsed, tuple(records), refusal
             messages = [*request["messages"], assistant]
             for call in calls:
-                record = catalog.execute(call.id, call.function.name, call.function.arguments)
+                record = (
+                    reader.execute(call.id, call.function.arguments)
+                    if reader is not None and call.function.name == TOOL_NAME else
+                    catalog.execute(call.id, call.function.name, call.function.arguments)
+                )
                 records.append(record)
                 if self.on_tool_call is not None:
                     self.on_tool_call(record)

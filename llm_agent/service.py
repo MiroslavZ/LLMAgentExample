@@ -120,7 +120,10 @@ class _ConversationHistory(HistoryManager):
 def _friendly_error(error: Exception) -> str:
     # Никогда не выводим str(error) из SDK: там могут быть тело ответа и секреты.
     if isinstance(error, ConversationStorageError):
-        return "Не удалось подтвердить сохранение результата. Проверьте доступ к каталогу данных."
+        code = getattr(error.__cause__, "winerror", None)
+        detail = f" (WinError {code})" if type(code) is int else ""
+        return (f"Не удалось подтвердить сохранение результата в локальной истории агента{detail}. "
+                "Проверьте доступ к каталогу данных.")
     if isinstance(error, MemoryStorageError):
         return "Не удалось загрузить память. Проверьте файл memory.sqlite3 и доступ к каталогу данных."
     if isinstance(error, ProfileStorageError):

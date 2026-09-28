@@ -121,7 +121,8 @@ class MCPIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(messages[-1]["role"], "tool")
                     self.assertEqual(messages[-1]["tool_call_id"], call_id)
                     result = json.loads(messages[-1]["content"])
-                    self.assertEqual(result, {"is_error": False, "data": expected_data})
+                    self.assertEqual(result, {"is_error": False, "data": expected_data,
+                                              "result_ref": {"$mcp_result": call_id, "pointer": "/data"}})
                     # Результат уже записан до финального обращения к модели.
                     pending = service.get(conversation.id).turns[-1]
                     self.assertEqual(pending.status, "running")
@@ -172,7 +173,8 @@ class MCPIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((record.call_id, record.server_name, record.tool_name),
                              (call_id, "Мой GitHub MCP", "get_repository"))
             self.assertEqual(json.loads(record.arguments), {"owner": "octocat", "repo": "Hello-World"})
-            self.assertEqual(json.loads(record.result), {"is_error": False, "data": expected_data})
+            self.assertEqual(json.loads(record.result), {"is_error": False, "data": expected_data,
+                                                        "result_ref": {"$mcp_result": call_id, "pointer": "/data"}})
             self.assertFalse(record.is_error)
             self.assertGreaterEqual(record.elapsed_seconds, 0)
             restored_service = ConversationService(Path(directory), "replacement-test-key")

@@ -125,10 +125,11 @@ async def get_tools(server: MCPServer, *, timeout: float = 30) -> MCPDiscovery:
 
 
 async def call_tool(
-    server: MCPServer, name: str, arguments: dict, *, timeout: float = 30,
+    server: MCPServer, name: str, arguments: dict, *, timeout: float = 90,
 ) -> types.CallToolResult:
     """Один вызов в новой сессии без автоматического повтора операции.
 
+    По умолчанию даётся 90 секунд, включая серверный LLM-запрос суммаризации.
     Ошибки инструмента (is_error) возвращаются как данные; ошибки транспорта
     становятся MCPConnectionError. SDK проверяет объявленную outputSchema.
     """

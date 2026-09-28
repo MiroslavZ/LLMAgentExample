@@ -5,6 +5,7 @@ import math
 import os
 import re
 import tempfile
+import time
 from contextlib import contextmanager, suppress
 from dataclasses import asdict, fields
 from datetime import datetime
@@ -17,6 +18,21 @@ from .tool_events import ToolCallRecord
 
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "conversations"
+
+
+def _replace_snapshot(source: Path, target: Path) -> None:
+    """Дождаться краткого чтения файла в Windows, сохраняя атомарную замену."""
+    for attempt in range(6):
+        try:
+            source.replace(target)
+            return
+        except PermissionError as error:
+            # Python-чтение, индексатор или антивирус могут открыть файл без
+            # FILE_SHARE_DELETE. Повторяем только replace готового снимка;
+            # постоянные ошибки доступа по-прежнему возвращаются вызывающему.
+            if getattr(error, "winerror", None) not in (5, 32, 33) or attempt == 5:
+                raise
+            time.sleep(0.02 * (attempt + 1))
 
 
 class ConversationStorageError(RuntimeError):
@@ -171,7 +187,7 @@ class ConversationStore:
                 output.write("\n")
                 output.flush()
                 os.fsync(output.fileno())
-            temporary_path.replace(path)
+            _replace_snapshot(temporary_path, path)
         except (OSError, ValueError, TypeError) as error:
             raise ConversationStorageError("Не удалось сохранить диалог. Проверьте доступ к каталогу данных.") from error
         finally:

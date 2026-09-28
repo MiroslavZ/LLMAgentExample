@@ -13,7 +13,7 @@ from nicegui.elements.timer import Timer
 
 from llm_agent.models import ContextSettings, Turn
 from llm_agent.service import ConversationService, ConversationStorageError
-from llm_agent.tool_events import ToolCallRecord
+from llm_agent.tool_events import ToolAttachment, ToolCallRecord
 from llm_agent.web.components import render_turn
 from llm_agent.web.jobs import RequestRunner
 from llm_agent.web.page import ChatPage
@@ -298,7 +298,7 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
             render_turn(Turn(user="Найди задачу", tool_calls=calls), restore=lambda: None, busy=True)
         expansions = [element for element in transcript.descendants() if isinstance(element, ui.expansion)]
         self.assertEqual([element.text for element in expansions], [
-            "GitHub · get_issue · Успешно", "GitHub · get_issue · Ошибка",
+            "1. GitHub · get_issue · Успешно", "2. GitHub · get_issue · Ошибка",
         ])
         self.assertTrue(all(not element.value for element in expansions))
         blocks = [element for element in transcript.descendants() if isinstance(element, ui.code)]
@@ -309,6 +309,22 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("&lt;strong&gt;", html)
         self.assertNotIn("<strong>", html)
         self.assertIn("Агент готовит ответ…", self.labels(transcript))
+
+    async def test_tool_attachment_downloads_embedded_bytes_without_reading_remote_uri(self):
+        attachment = ToolAttachment("сводка.txt", 'Точный текст "🐍"\r\n', "file:///remote/summary.txt")
+        record = ToolCallRecord("save", "MCP", "save_to_file", "{}", "{}", False, 0.1, (attachment,))
+        with self.client, ui.column() as transcript:
+            render_turn(Turn(user="Сохрани", tool_calls=[record]), restore=lambda: None, busy=False)
+        button = next(element for element in transcript.descendants()
+                      if isinstance(element, ui.button) and element.text == "Скачать сводка.txt")
+        handler = next(listener.handler for listener in button._event_listeners.values() if listener.type == "click")
+        with patch("nicegui.elements.button.handle_event") as dispatch:
+            handler(None)
+        with self.client, patch("llm_agent.web.components.ui.download.content") as download:
+            dispatch.call_args.args[0](None)
+        download.assert_called_once_with(
+            attachment.text.encode("utf-8"), filename="сводка.txt", media_type="text/plain; charset=utf-8",
+        )
 
 
 if __name__ == "__main__":

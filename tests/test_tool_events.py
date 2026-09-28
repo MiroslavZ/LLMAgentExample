@@ -8,7 +8,7 @@ from pathlib import Path
 
 from llm_agent.models import Conversation, Turn
 from llm_agent.storage import ConversationStorageError, ConversationStore
-from llm_agent.tool_events import ToolCallRecord
+from llm_agent.tool_events import ToolAttachment, ToolCallRecord
 
 
 class ToolCallRecordTests(unittest.TestCase):
@@ -24,6 +24,23 @@ class ToolCallRecordTests(unittest.TestCase):
         self.assertEqual(restored, self.record)
         with self.assertRaises(FrozenInstanceError):
             restored.result = "changed"
+
+    def test_old_record_without_attachments_and_new_attachment_roundtrip(self):
+        data = asdict(self.record)
+        del data["attachments"]
+        self.assertEqual(ToolCallRecord.from_dict(data), self.record)
+        attachment = ToolAttachment("сводка.txt", "Точная сводка\r\n", "file:///remote/summary.txt")
+        data["attachments"] = [asdict(attachment)]
+        restored = ToolCallRecord.from_dict(json.loads(json.dumps(data)))
+        self.assertEqual(restored.attachments, (attachment,))
+
+    def test_invalid_attachments_are_rejected(self):
+        attachment = {"filename": "summary.txt", "text": "данные", "uri": "file:///remote/summary.txt"}
+        for invalid in (None, {}, [None], [{**attachment, "filename": "../secret.txt"}],
+                        [{**attachment, "filename": "page.html"}], [{**attachment, "text": 1}],
+                        [{**attachment, "text": "x" * 200_001}]):
+            with self.subTest(attachment=str(invalid)[:80]), self.assertRaises(ValueError):
+                ToolCallRecord.from_dict({**asdict(self.record), "attachments": invalid})
 
     def test_loading_rejects_wrong_types_unknown_fields_and_nonfinite_time(self):
         data = asdict(self.record)

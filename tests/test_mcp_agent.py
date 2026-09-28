@@ -89,7 +89,11 @@ class MCPAgentTests(unittest.TestCase):
         agent = self.agent(on_tool_call=records.append)
         result = agent.request("Расскажи о репозитории octocat/Hello-World")
         first, final = [call.kwargs for call in self.create.call_args_list]
-        self.assertEqual(first["tools"][0]["function"]["parameters"], SCHEMA)
+        parameters = first["tools"][0]["function"]["parameters"]
+        self.assertEqual(parameters["required"], SCHEMA["required"])
+        self.assertFalse(parameters["additionalProperties"])
+        for name, schema in SCHEMA["properties"].items():
+            self.assertEqual(parameters["properties"][name]["anyOf"][0], schema)
         self.assertIn(TOOL.description, first["tools"][0]["function"]["description"])
         self.assertEqual(first["tool_choice"], "auto")
         self.assertEqual(first["messages"][-1]["role"], "user")
@@ -242,6 +246,24 @@ class MCPAgentTests(unittest.TestCase):
         self.assertEqual(result.tool_calls, ())
         self.assertNotIn("tools", self.create.call_args.kwargs)
 
+    def test_invariants_receive_resolved_data_before_dependent_tool(self):
+        rules = InvariantSet((Invariant("rule", "Проверяй переданные данные"),))
+        arguments = json.dumps({
+            "owner": {"$mcp_result": "call-1", "pointer": "/data/language"},
+            "repo": "Hello-World",
+        })
+        self.sequence(verdict(), self.choose, verdict(),
+                      lambda **r: tool_response(r["tools"][0]["function"]["name"],
+                                                arguments=arguments, call_id="dependent"),
+                      verdict("conflict"))
+        result = self.agent(invariants=rules).request("Обработай данные предыдущего вызова")
+        self.assertTrue(result.refused)
+        self.call.assert_awaited_once()
+        check = json.loads(self.create.call_args.kwargs["messages"][-1]["content"])
+        candidate = json.loads(check["candidate"])
+        actual = json.loads(candidate["tool_calls"][0]["function"]["arguments"])
+        self.assertEqual(actual, {"owner": "Python", "repo": "Hello-World"})
+
     def test_service_preserves_call_when_final_llm_request_fails(self):
         service = ConversationService(self.directory / "conversations", token="test-key")
         service.mcp_servers.save(SERVER)
@@ -257,6 +279,34 @@ class MCPAgentTests(unittest.TestCase):
         restored = service.store.load(conversation.id)
         self.assertEqual(restored.turns[-1].tool_calls[0].tool_name, "get_repository")
         self.assertEqual(restored.turns[-1].tool_calls, result.turns[-1].tool_calls)
+
+    def test_transient_storage_lock_after_mcp_does_not_repeat_tool_or_stop_final_answer(self):
+        service = ConversationService(self.directory / "conversations", token="test-key")
+        service.mcp_servers.save(SERVER)
+        conversation = service.create()
+        self.sequence(self.choose, answer())
+        original_replace = Path.replace
+        blocked = False
+
+        def replace_snapshot(source, target):
+            nonlocal blocked
+            snapshot = json.loads(source.read_text(encoding="utf-8"))
+            if snapshot["turns"][-1]["tool_calls"] and not blocked:
+                blocked = True
+                error = PermissionError("temporarily open for reading")
+                error.winerror = 5
+                raise error
+            return original_replace(source, target)
+
+        with patch.object(Path, "replace", autospec=True, side_effect=replace_snapshot), \
+                patch("llm_agent.storage.time.sleep"):
+            result = service.send(conversation.id, "Проверь GitHub")
+        self.assertTrue(blocked)
+        self.assertEqual(result.turns[-1].status, "completed")
+        self.assertIsNone(result.turns[-1].error)
+        self.call.assert_awaited_once()
+        self.assertEqual(self.create.call_count, 2)
+        self.assertEqual(service.store.load(conversation.id), result)
 
     def run_cli(self, *, entrypoint=cli_main):
         output = io.StringIO()

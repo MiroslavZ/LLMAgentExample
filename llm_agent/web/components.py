@@ -63,10 +63,10 @@ def render_turn(turn: Turn, *, restore: Callable[[], None], busy: bool) -> None:
         if turn.meta_prompt is not None:
             with ui.expansion("Сгенерированный промпт", icon="auto_fix_high").classes("meta-result"):
                 ui.markdown(turn.meta_prompt).classes("message-markdown")
-        for call in turn.tool_calls:
+        for step, call in enumerate(turn.tool_calls, start=1):
             status = "Ошибка" if call.is_error else "Успешно"
             with ui.expansion(
-                f"{call.server_name} · {call.tool_name} · {status}",
+                f"{step}. {call.server_name} · {call.tool_name} · {status}",
                 icon="error_outline" if call.is_error else "build",
             ).classes("mcp-tool"):
                 ui.label(f"{status} · {call.elapsed_seconds:.1f} с").classes("memory-description")
@@ -74,6 +74,13 @@ def render_turn(turn: Turn, *, restore: Callable[[], None], busy: bool) -> None:
                 _tool_code(call.arguments, language="json")
                 ui.label("Результат").classes("font-medium text-sm")
                 _tool_code(call.result, language="text")
+            for attachment in call.attachments:
+                ui.button(
+                    f"Скачать {attachment.filename}", icon="download",
+                    on_click=lambda _, file=attachment: ui.download.content(
+                        file.text.encode("utf-8"), filename=file.filename, media_type="text/plain; charset=utf-8",
+                    ),
+                ).props("outline no-caps").classes("self-start")
         if turn.answer is not None:
             with ui.column().classes("assistant-message"):
                 with ui.row().classes("message-heading"):

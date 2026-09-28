@@ -421,8 +421,23 @@ class Agent:
             seen_ids.update(ids)
             assistant = choice.message.model_dump(mode="json", exclude_none=True)
             if self.invariants.rules:
+                # Проверяющий видит фактические данные следующего шага цепочки,
+                # а не только ссылку на предыдущий результат.
+                candidate = {**assistant, "tool_calls": []}
+                for call in calls:
+                    checked_call = call.model_dump(mode="json", exclude_none=True)
+                    if reader is None or call.function.name != TOOL_NAME:
+                        try:
+                            resolved = catalog.resolve_arguments(
+                                call.function.name, call.function.arguments, pending_call_ids=ids,
+                            )
+                        except MCPToolError:
+                            pass  # Некорректный вызов будет возвращён модели как ошибка.
+                        else:
+                            checked_call["function"]["arguments"] = json.dumps(resolved, ensure_ascii=False)
+                    candidate["tool_calls"].append(checked_call)
                 verdict, _, _ = self._check_invariants(
-                    user, request["model"], candidate=json.dumps(assistant, ensure_ascii=False),
+                    user, request["model"], candidate=json.dumps(candidate, ensure_ascii=False),
                 )
                 if not verdict.passed:
                     elapsed = time.perf_counter() - started
@@ -433,7 +448,7 @@ class Agent:
                 record = (
                     reader.execute(call.id, call.function.arguments)
                     if reader is not None and call.function.name == TOOL_NAME else
-                    catalog.execute(call.id, call.function.name, call.function.arguments)
+                    catalog.execute(call.id, call.function.name, call.function.arguments, pending_call_ids=ids)
                 )
                 records.append(record)
                 if self.on_tool_call is not None:

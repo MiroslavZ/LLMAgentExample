@@ -18,7 +18,9 @@ from llm_agent.history import DialogueUsage, HistoryManager, TokenUsage
 from llm_agent.invariants import Invariant, InvariantSet
 from llm_agent.mcp_client import MCPConnectionError, MCPDiscovery
 from llm_agent.mcp_config import MCPServer
-from llm_agent.mcp_tools import MAX_RESULT_CHARS, MAX_TOOL_CALLS, MAX_TOOL_ROUNDS, MCPToolCatalog, MCPToolError
+from llm_agent.mcp_tools import (
+    MAX_ARGUMENT_CHARS, MAX_RESULT_CHARS, MAX_TOOL_CALLS, MAX_TOOL_ROUNDS, MCPToolCatalog, MCPToolError,
+)
 from llm_agent.models import RequestOptions
 from llm_agent.service import ConversationService
 from llm_agent.task_state import TaskStage, TaskState
@@ -336,6 +338,54 @@ class MCPAgentTests(unittest.TestCase):
             self.run_cli(entrypoint=cli_run)
         self.create.assert_not_called()
 
+    def test_plain_cli_prompt_uses_multiple_configured_servers_with_same_tool_name(self):
+        inventory = MCPServer("inventory", "Склад", "http://127.0.0.1:9101/mcp", enabled=True)
+        delivery = MCPServer("delivery", "Доставка", "http://127.0.0.1:9102/mcp", enabled=True)
+        service = ConversationService(self.directory / "conversations", token=None)
+        for server in (inventory, delivery):
+            service.mcp_servers.save(server)
+        tool = Tool(name="lookup", input_schema={
+            "type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"],
+        })
+        self.discover.side_effect = lambda server: MCPDiscovery(server.name, "1", "test", (tool,))
+        self.call.side_effect = [
+            types.CallToolResult(content=[], structured_content={"item_id": "item-42"}),
+            types.CallToolResult(content=[], structured_content={"days": 3}),
+        ]
+
+        def lookup(request, server, call_id, query):
+            function = next(item["function"] for item in request["tools"]
+                            if item["function"]["description"].startswith(f"{server.name}: lookup."))
+            return tool_response(function["name"], arguments=json.dumps({"query": query}), call_id=call_id)
+
+        def delivery_step(**request):
+            result = json.loads(request["messages"][-1]["content"])
+            self.assertEqual(result["data"], {"item_id": "item-42"})
+            return lookup(request, delivery, "delivery-call", {**result["result_ref"], "pointer": "/data/item_id"})
+
+        self.sequence(lambda **request: lookup(request, inventory, "inventory-call", "Ноутбук"),
+                      delivery_step, answer("Доставка товара item-42 займёт 3 дня."))
+        output = io.StringIO()
+        arguments = [
+            "agent", "--data-dir", str(service.store.data_dir),
+            "--invariants-file", str(self.directory / "invariants.json"),
+            "--user", "Найди код товара Ноутбук на складе, затем узнай срок доставки по этому коду.",
+        ]
+        with patch("sys.argv", arguments), patch("llm_agent.cli.load_env"), \
+                patch.dict("os.environ", {"API_KEY": "test-key"}), \
+                patch("llm_agent.cli.console", Console(file=output, width=160, color_system=None)):
+            cli_main()
+
+        self.assertEqual([call.args for call in self.call.await_args_list], [
+            (inventory, "lookup", {"query": "Ноутбук"}),
+            (delivery, "lookup", {"query": "item-42"}),
+        ])
+        self.assertIn("3 дня", output.getvalue())
+        conversation, = service.list_conversations()
+        turn = service.get(conversation.id).turns[-1]
+        self.assertEqual(turn.status, "completed")
+        self.assertEqual([record.server_name for record in turn.tool_calls], ["Склад", "Доставка"])
+
 
 class MCPCatalogTests(unittest.TestCase):
     def discover(self, tools, servers=(SERVER,)):
@@ -350,6 +400,42 @@ class MCPCatalogTests(unittest.TestCase):
         self.assertEqual(len(set(names)), 6)
         for name in names:
             self.assertRegex(name, r"^[A-Za-z0-9_-]{1,64}$")
+
+    def test_same_named_tools_route_to_their_own_servers(self):
+        servers = (SERVER, replace(SERVER, id="second", name="Second", url="http://127.0.0.1:8001/mcp"))
+        catalog = self.discover([TOOL], servers)
+        with patch("llm_agent.mcp_tools.call_tool", new_callable=AsyncMock,
+                   return_value=types.CallToolResult(content=[], structured_content={"ok": True})) as call:
+            for index, function in enumerate(catalog.functions):
+                record = catalog.execute(str(index), function["function"]["name"], ARGS)
+                self.assertFalse(record.is_error)
+                self.assertEqual(record.server_name, servers[index].name)
+                call.assert_awaited_with(servers[index], TOOL.name, json.loads(ARGS))
+
+    def test_structured_delivery_error_preserves_confirmed_ids_without_result_reference(self):
+        catalog = self.discover([TOOL])
+        data = {"status": "partial", "message_ids": [10], "error": "Лимит Telegram"}
+        with patch("llm_agent.mcp_tools.call_tool", new_callable=AsyncMock,
+                   return_value=types.CallToolResult(content=[], structured_content=data, is_error=True)):
+            record = catalog.execute("partial", catalog.functions[0]["function"]["name"], ARGS)
+        self.assertTrue(record.is_error)
+        self.assertEqual(json.loads(record.result), {"is_error": True, "data": data})
+
+    def test_long_combined_report_reaches_tool_unchanged_with_bounded_arguments(self):
+        tool = Tool(name="send_message", input_schema={
+            "type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"],
+        })
+        catalog = self.discover([tool])
+        name = catalog.functions[0]["function"]["name"]
+        report = "Проект: описание и CVE\n" * 1000
+        with patch("llm_agent.mcp_tools.call_tool", new_callable=AsyncMock,
+                   return_value=types.CallToolResult(content=[], structured_content={"status": "sent"})) as call:
+            record = catalog.execute("report", name, json.dumps({"text": report}, ensure_ascii=False))
+            self.assertFalse(record.is_error)
+            call.assert_awaited_once_with(SERVER, "send_message", {"text": report})
+            record = catalog.execute("oversized", name, json.dumps({"text": "x" * MAX_ARGUMENT_CHARS}))
+            self.assertTrue(record.is_error)
+            self.assertEqual(call.await_count, 1)
 
     def test_invalid_schema_fails_without_calling_model(self):
         with self.assertRaises(MCPToolError):

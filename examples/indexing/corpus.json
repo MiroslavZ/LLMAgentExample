@@ -1,0 +1,4 @@
+{
+  "files": ["README.md", "MCP.md", "ORCHESTRATION.md", "SCHEDULING.md",
+    "INVARIANTS.md", "TASK_STATE.md", "MEMORY.md", "PERSONALIZATION.md"]
+}

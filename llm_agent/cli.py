@@ -30,7 +30,7 @@ from .mcp_config import MCPServer, MCPStorageError
 from .mcp_client import MCPConnectionError
 from .mcp_tools import MCPToolError
 from .tool_events import ToolCallRecord
-from .models import Conversation, ContextSettings, RequestOptions
+from .models import Conversation, ContextSettings, RequestOptions, Turn
 from .service import ConversationService
 from .storage import DEFAULT_DATA_DIR, ConversationBusyError, ConversationStorageError
 
@@ -76,6 +76,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--system", help="Системный промпт диалога (сохраняется, если ещё не задан)")
     parser.add_argument("--user", help="Текст запроса; необязателен для управления диалогами, памятью, профилями, задачей и инвариантами")
     parser.add_argument("--batch", action="store_true", help="Один запрос для планировщика: --conversation и --user; результат в JSON")
+    rag = parser.add_mutually_exclusive_group()
+    rag.add_argument("--rag", dest="rag_enabled", action="store_true", default=None,
+                     help="Включить поиск по базе знаний; без флага сохраняется режим диалога")
+    rag.add_argument("--no-rag", dest="rag_enabled", action="store_false",
+                     help="Отключить поиск по базе знаний")
     parser.add_argument("--mcp-url", help="Сохранить общий MCP-сервер для CLI и веба (ID: cli)")
     parser.add_argument("--mcp-token-env", default="", help="Имя переменной с MCP Bearer-токеном (не сам токен)")
     task_action = parser.add_mutually_exclusive_group()
@@ -277,6 +282,7 @@ def parse_args() -> argparse.Namespace:
         if not any(profile_options) and not any(task_options) and not (
             args.invariants_import or args.invariants_show or args.new_conversation
             or args.list_conversations or args.show_conversation or
+            args.rag_enabled is not None or
             memory_edit or args.memory_show or args.memory_clear_working
         ):
             parser.error("Укажите --user или операцию с диалогами, памятью, профилями, задачей или инвариантами")
@@ -297,6 +303,7 @@ def parse_args() -> argparse.Namespace:
         args.user is not None or any(task_options) or any(profile_options) or memory_edit
         or args.memory_show or args.memory_clear_working or args.invariants_import
         or args.invariants_show or args.new_conversation or all(views) or args.mcp_url
+        or args.rag_enabled is not None
     ):
         parser.error("Просмотр диалогов нельзя совмещать с другими операциями")
     if args.list_conversations and args.conversation:
@@ -306,6 +313,7 @@ def parse_args() -> argparse.Namespace:
         or args.task_approve or args.task_continue or args.memory_set or args.memory_delete
         or args.memory_show or args.memory_clear_working or args.profile or args.profile_clear
         or args.profile_show
+        or args.rag_enabled is not None
     )
     if requires_conversation and not (args.conversation or args.new_conversation or args.user is not None or args.task_start):
         parser.error("Выберите --conversation ID_OR_PATH или создайте --new-conversation")
@@ -539,6 +547,8 @@ def print_json(value: object) -> None:
 
 def context_settings(args: argparse.Namespace, current: ContextSettings) -> ContextSettings:
     updates = {}
+    if args.rag_enabled is not None:
+        updates["rag_enabled"] = args.rag_enabled
     if args.strategy is not None:
         updates["strategy"] = args.strategy
     if args.window_size is not None:
@@ -599,6 +609,7 @@ def send_message(args: argparse.Namespace, conversation: Conversation, options: 
     responses: list[RequestResult] = []
     compressions: list[CompressionResult] = []
     print_request_info(args, system=conversation.system_prompt or args.system, user=args.user)
+    console.print("Режим: с RAG" if settings.rag_enabled else "Режим: без RAG")
     with console.status("[bold cyan]Ожидание ответа модели…", spinner="dots"):
         result = service.send(
             conversation.id, args.user, system_prompt=args.system or "", options=options,
@@ -608,6 +619,7 @@ def send_message(args: argparse.Namespace, conversation: Conversation, options: 
     for compression in compressions:
         print_compression(compression)
     turn = result.turns[-1]
+    print_rag_sources(turn)
     for tool_call in turn.tool_calls:
         print_tool_call(tool_call)
     for index, response in enumerate(responses):
@@ -624,6 +636,19 @@ def send_message(args: argparse.Namespace, conversation: Conversation, options: 
     print_task_state(result.task_state)
     if turn.error:
         raise ValueError(turn.error)
+
+
+def print_rag_sources(turn: Turn) -> None:
+    if turn.rag_context is None:
+        return
+    sources = Table(title="Источники RAG")
+    for column in ("№", "Источник", "Раздел", "Чанк", "Сходство"):
+        sources.add_column(column)
+    for number, chunk in enumerate(turn.rag_context["chunks"], start=1):
+        sources.add_row(str(number), Text(chunk["source"]), Text(chunk["section"] or "—"),
+                        Text(str(chunk["chunk_id"])), f"{chunk['score']:.3f}")
+    console.print(Text(f"Индекс: {turn.rag_context['index']}"))
+    console.print(sources)
 
 
 def main() -> None:

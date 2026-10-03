@@ -55,6 +55,7 @@ def render_turn(turn: Turn, *, restore: Callable[[], None], busy: bool) -> None:
             with ui.row().classes("message-heading"):
                 ui.label("Вы").classes("message-author")
                 ui.label(format_time(turn.created_at)).classes("message-time")
+                ui.label("С RAG" if turn.rag_enabled else "Без RAG").classes("message-time")
             # Пользовательский ввод отображаем буквально, включая пробелы и HTML.
             ui.label(turn.user).classes("user-text")
             ui.button(icon="content_copy", on_click=lambda: ui.clipboard.write(turn.user)).props(
@@ -63,6 +64,15 @@ def render_turn(turn: Turn, *, restore: Callable[[], None], busy: bool) -> None:
         if turn.meta_prompt is not None:
             with ui.expansion("Сгенерированный промпт", icon="auto_fix_high").classes("meta-result"):
                 ui.markdown(turn.meta_prompt).classes("message-markdown")
+        if turn.rag_context is not None:
+            chunks = turn.rag_context["chunks"]
+            with ui.expansion(f"Источники RAG · {len(chunks)}", icon="library_books").classes("w-full"):
+                ui.label(f"Индекс: {turn.rag_context['index']}").classes("memory-description")
+                for number, chunk in enumerate(chunks, start=1):
+                    with ui.expansion(f"[{number}] {chunk['source']}", icon="description").classes("w-full"):
+                        ui.label(f"Раздел: {chunk['section'] or '—'}").classes("memory-description")
+                        ui.label(f"Чанк: {chunk['chunk_id']} · Сходство: {chunk['score']:.3f}").classes("memory-description")
+                        ui.label(chunk['text']).classes("whitespace-pre-wrap break-words w-full")
         for step, call in enumerate(turn.tool_calls, start=1):
             status = "Ошибка" if call.is_error else "Успешно"
             with ui.expansion(

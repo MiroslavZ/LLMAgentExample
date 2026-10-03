@@ -1,4 +1,12 @@
 {
-  "files": ["README.md", "MCP.md", "ORCHESTRATION.md", "SCHEDULING.md",
-    "INVARIANTS.md", "TASK_STATE.md", "MEMORY.md", "PERSONALIZATION.md"]
+  "files": [
+    "README.md",
+    "docs/MCP.md",
+    "docs/ORCHESTRATION.md",
+    "docs/SCHEDULING.md",
+    "docs/INVARIANTS.md",
+    "docs/TASK_STATE.md",
+    "docs/MEMORY.md",
+    "docs/PERSONALIZATION.md"
+  ]
 }

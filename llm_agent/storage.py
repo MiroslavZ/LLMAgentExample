@@ -129,7 +129,9 @@ class ConversationStore:
         turns = []
         turn_fields = {field.name for field in fields(Turn)}
         for item in values["turns"]:
-            if not isinstance(item, dict) or set(item) not in (turn_fields, turn_fields - {"tool_calls"}):
+            optional_fields = {"tool_calls", "rag_enabled", "rag_context"}
+            if (not isinstance(item, dict) or not set(item) <= turn_fields
+                    or not turn_fields - optional_fields <= set(item)):
                 raise ValueError("Некорректный формат хода диалога")
             turn_values = item.copy()
             turn_values["options"] = RequestOptions(**turn_values["options"])
@@ -146,6 +148,7 @@ class ConversationStore:
                        for value in (turn.answer, turn.meta_prompt, turn.error))
                 or not isinstance(turn.created_at, str)
                 or type(turn.memory_updated) is not bool
+                or type(turn.rag_enabled) is not bool
                 or (turn.elapsed_seconds is not None and (
                     type(turn.elapsed_seconds) not in (int, float)
                     or not math.isfinite(turn.elapsed_seconds) or turn.elapsed_seconds < 0
@@ -153,6 +156,21 @@ class ConversationStore:
                 or (turn.status == "completed" and turn.answer is None)
             ):
                 raise ValueError("Некорректный ход диалога")
+            if turn.rag_context is not None:
+                context = turn.rag_context
+                if (not turn.rag_enabled or not isinstance(context, dict)
+                        or set(context) != {"index", "chunks"}
+                        or not isinstance(context["index"], str)
+                        or not isinstance(context["chunks"], list)
+                        or not context["chunks"]):
+                    raise ValueError("Некорректный контекст RAG")
+                for chunk in context["chunks"]:
+                    if (not isinstance(chunk, dict)
+                            or any(not isinstance(chunk.get(key), str)
+                                   for key in ("source", "section", "text", "chunk_id"))
+                            or type(chunk.get("score")) not in (int, float)
+                            or not math.isfinite(chunk["score"])):
+                        raise ValueError("Некорректный фрагмент RAG")
             datetime.fromisoformat(turn.created_at)
             turns.append(turn)
         values["turns"] = turns

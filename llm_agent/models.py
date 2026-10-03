@@ -20,8 +20,11 @@ class ContextSettings:
     window_size: int = 10
     last_messages: int = 6
     compress_every: int = 10
+    rag_enabled: bool = False
 
     def validate(self) -> None:
+        if type(self.rag_enabled) is not bool:
+            raise ValueError("Режим RAG должен быть логическим значением")
         if self.strategy not in ("full", "window", "facts", "summary"):
             raise ValueError("Выберите поддерживаемую стратегию контекста")
         if type(self.window_size) is not int or self.window_size <= 0:
@@ -82,6 +85,8 @@ class Turn:
     elapsed_seconds: float | None = None
     memory_updated: bool = False
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
+    rag_enabled: bool = False
+    rag_context: dict | None = None
 
 
 @dataclass

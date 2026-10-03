@@ -74,6 +74,37 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("API_KEY" in label for label in self.labels(page.banner)))
         self.assertEqual(len(self.service.list_conversations()), 1)
 
+    async def test_rag_setting_persists_and_can_change_after_conversation_started(self):
+        self.conversation.started = True
+        self.conversation.turns.append(Turn(user="Первый вопрос", answer="Ответ", status="completed"))
+        self.service.store.save(self.conversation)
+        with self.client:
+            page = self.build_page()
+            self.assertTrue(page.rag_input.enabled)
+            self.assertFalse(page.rag_input.value)
+            page.rag_input.set_value(True)
+            page.save_settings()
+            self.assertTrue(self.service.get(self.conversation.id).settings.rag_enabled)
+            page.rag_input.set_value(False)
+            page.save_settings()
+        self.assertFalse(self.service.get(self.conversation.id).settings.rag_enabled)
+
+    async def test_rag_sources_are_collapsed_and_rendered_as_literal_text(self):
+        text = '<script>alert("source")</script>\n```html\n<b>Текст</b>\n```'
+        turn = Turn(user="Вопрос", rag_enabled=True, rag_context={
+            "index": "test-index",
+            "chunks": [{"source": "<b>file.md</b>", "section": "Раздел", "text": text,
+                        "score": 0.75, "chunk_id": "chunk-1"}],
+        })
+        with self.client, ui.column() as transcript:
+            render_turn(turn, restore=lambda: None, busy=False)
+        self.assertIn("С RAG", self.labels(transcript))
+        self.assertIn(text, self.labels(transcript))
+        self.assertFalse(any(isinstance(element, ui.markdown) for element in transcript.descendants()))
+        expansions = [element for element in transcript.descendants() if isinstance(element, ui.expansion)]
+        self.assertEqual([element.text for element in expansions], ["Источники RAG · 1", "[1] <b>file.md</b>"])
+        self.assertTrue(all(not element.value for element in expansions))
+
     async def test_cli_command_tracks_selected_conversation_and_uses_quoted_path(self):
         with self.client:
             page = self.build_page()

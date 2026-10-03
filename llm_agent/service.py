@@ -32,6 +32,7 @@ from .storage import ConversationBusyError, ConversationStorageError, Conversati
 from .task_state import CONTINUE_TASK, PLAN_APPROVAL_REQUIRED, TaskStage, TaskState, TaskStateError
 from .tool_events import ToolCallRecord
 from .observations import ObservationReader, is_observation
+from .rag import RAGError, Retriever
 
 
 class _ConversationHistory(HistoryManager):
@@ -118,6 +119,8 @@ class _ConversationHistory(HistoryManager):
 
 
 def _friendly_error(error: Exception) -> str:
+    if isinstance(error, RAGError):
+        return str(error)
     # Никогда не выводим str(error) из SDK: там могут быть тело ответа и секреты.
     if isinstance(error, ConversationStorageError):
         code = getattr(error.__cause__, "winerror", None)
@@ -170,6 +173,7 @@ class ConversationService:
         self.invariants_path = Path(invariants_path) if invariants_path is not None else self.store.data_dir.parent / "invariants.json"
         self.invariants = InvariantStore(self.invariants_path)
         self._token = token
+        self.retriever = Retriever()
         self._state_lock = threading.Lock()
         self._locks: dict[str, threading.Lock] = {}
         self._storage_errors: dict[str, str] = {}
@@ -465,7 +469,7 @@ class ConversationService:
                 conversation.system_prompt = system_prompt
                 conversation.title = " ".join(user.split())[:56]
                 conversation.started = True
-            conversation.turns.append(Turn(user=user.strip(), options=options))
+            conversation.turns.append(Turn(user=user.strip(), options=options, rag_enabled=conversation.settings.rag_enabled))
             conversation.updated_at = utc_now()
             self._save(conversation)
             started_at = time.perf_counter()
@@ -480,6 +484,9 @@ class ConversationService:
                     conversation.updated_at = utc_now()
                     self._save(conversation)
                     return deepcopy(conversation)
+                if conversation.settings.rag_enabled:
+                    conversation.turns[-1].rag_context = self.retriever.retrieve(user.strip())
+                    self._save(conversation)
                 memory = self.memory.snapshot(conversation_id)
                 profile = self.profiles.selected(conversation_id)
                 history = _ConversationHistory(self.store, conversation, started_at)
@@ -493,6 +500,8 @@ class ConversationService:
                     "on_tool_call": history.record_tool_call,
                     "on_compression": compressions.append,
                 }
+                if conversation.turns[-1].rag_context is not None:
+                    agent_options["rag_context"] = conversation.turns[-1].rag_context
                 if any(server.enabled for server in agent_options["mcp_servers"]) or any(
                     is_observation(call) for turn in conversation.turns for call in turn.tool_calls
                 ) or any(

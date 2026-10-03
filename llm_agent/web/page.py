@@ -540,6 +540,9 @@ class ChatPage:
                 ui.label("Выберите перед первым сообщением. Позже можно менять параметры стратегии.").classes("setting-note")
             self.strategy_fields = ui.column().classes("w-full gap-4")
             self.render_strategy_fields()
+            self.rag_input = ui.checkbox("Использовать RAG", value=settings.rag_enabled)
+            self.rag_input.set_enabled(not self.busy)
+            ui.label("Добавляет найденные фрагменты к следующему вопросу. Режим можно менять в ходе диалога.").classes("setting-note")
             self.save_settings_button = ui.button("Сохранить настройки", icon="check", on_click=self.save_settings).props(
                 "outline no-caps"
             ).classes("w-full")
@@ -587,6 +590,7 @@ class ChatPage:
     def collect_settings(self) -> ContextSettings:
         current = self.snapshot.settings
         return ContextSettings(
+            rag_enabled=self.rag_input.value,
             strategy=self.strategy_input.value,
             window_size=self.integer(self.window_input.value, "Размер окна") if self.window_input else current.window_size,
             last_messages=self.integer(self.last_messages_input.value, "Количество последних сообщений", 0) if self.last_messages_input else current.last_messages,

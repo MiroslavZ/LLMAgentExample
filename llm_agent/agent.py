@@ -116,6 +116,7 @@ class Agent:
         mcp_servers: Sequence[MCPServer] = (),
         on_tool_call: Callable[[ToolCallRecord], None] | None = None,
         observations: ObservationReader | None = None,
+        rag_context: dict | None = None,
     ) -> None:
         if strategy is not None and strategy not in SUPPORTED_STRATEGIES:
             raise ValueError(f"Неизвестная стратегия: {strategy}")
@@ -149,6 +150,7 @@ class Agent:
             server.validate()
         self.on_tool_call = on_tool_call
         self.observations = observations
+        self.rag_context = deepcopy(rag_context)
         self.history = history if history is not None else (
             BranchHistoryManager(history_path, branch=branch) if strategy == "branch"
             else HistoryManager(history_path, strategy=self._strategy)
@@ -508,6 +510,14 @@ class Agent:
                 len(messages),
             )
             messages = messages[:boundary] + memory_messages + messages[boundary:]
+
+        if self.rag_context is not None:
+            from .rag import RAG_INSTRUCTION, context_message
+
+            messages = [
+                {"role": "system", "content": RAG_INSTRUCTION},
+                *messages[:-1], context_message(self.rag_context), messages[-1],
+            ]
 
         request = {
             "model": model,

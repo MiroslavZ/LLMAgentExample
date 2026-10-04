@@ -1,0 +1,21 @@
+{
+    "files":[
+        "docs/CHAT.md",
+        "docs/DAY19_PLAN.md",
+        "docs/DAY20_PLAN.md",
+        "docs/DAY21_PLAN.md",
+        "docs/DAY22_PLAN.md",
+        "docs/DAY23_PLAN.md",
+        "docs/INDEXING.md",
+        "docs/INVARIANTS.md",
+        "docs/LECTURE.md",
+        "docs/MCP.md",
+        "docs/MEMORY.md",
+        "docs/ORCHESTRATION.md",
+        "docs/PERSONALIZATION.md",
+        "docs/RAG.md",
+        "docs/SCHEDULING.md",
+        "docs/TASK_STATE.md",
+        "docs/TASKS.md"
+    ]
+}

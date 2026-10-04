@@ -543,6 +543,22 @@ class ChatPage:
             self.rag_input = ui.checkbox("Использовать RAG", value=settings.rag_enabled)
             self.rag_input.set_enabled(not self.busy)
             ui.label("Добавляет найденные фрагменты к следующему вопросу. Режим можно менять в ходе диалога.").classes("setting-note")
+            self.rag_rewrite_input = ui.checkbox("Query rewrite · переписать запрос", value=settings.rag_rewrite_enabled)
+            ui.label("Отдельный запрос к модели уточняет формулировку для поиска. Ответ строится по исходному вопросу.").classes("setting-note")
+            self.rag_filter_input = ui.checkbox("Filter · фильтр релевантности", value=settings.rag_filter_enabled)
+            self.rag_top_k_before_input = ui.number(
+                "Кандидатов до отбора", value=settings.rag_top_k_before, min=1, step=1,
+            ).props("outlined dense").classes("w-full")
+            self.rag_top_k_after_input = ui.number(
+                "Максимум фрагментов после отбора", value=settings.rag_top_k_after, min=1, step=1,
+            ).props("outlined dense").classes("w-full")
+            self.rag_threshold_input = ui.number(
+                "Порог cosine similarity", value=settings.rag_similarity_threshold, min=-1, max=1, step=0.01,
+            ).props("outlined dense").classes("w-full")
+            ui.label("Фильтр оставляет score ≥ порога и сохраняет порядок поиска. Cosine — сходство, а не вероятность правильного ответа.").classes("setting-note")
+            self.rag_input.on_value_change(lambda: self.update_rag_controls())
+            self.rag_filter_input.on_value_change(lambda: self.update_rag_controls())
+            self.update_rag_controls()
             self.save_settings_button = ui.button("Сохранить настройки", icon="check", on_click=self.save_settings).props(
                 "outline no-caps"
             ).classes("w-full")
@@ -554,6 +570,13 @@ class ChatPage:
             if self.snapshot.started:
                 with ui.expansion("Системный промпт", icon="psychology").classes("w-full system-preview"):
                     ui.label(self.snapshot.system_prompt or "Не задан").classes("system-preview-text")
+
+    def update_rag_controls(self) -> None:
+        enabled = not self.busy and self.rag_input.value
+        for widget in (self.rag_rewrite_input, self.rag_filter_input,
+                       self.rag_top_k_before_input, self.rag_top_k_after_input):
+            widget.set_enabled(enabled)
+        self.rag_threshold_input.set_enabled(enabled and self.rag_filter_input.value)
 
     def render_strategy_fields(self) -> None:
         strategy = self.strategy_input.value
@@ -589,13 +612,20 @@ class ChatPage:
 
     def collect_settings(self) -> ContextSettings:
         current = self.snapshot.settings
-        return ContextSettings(
+        settings = ContextSettings(
             rag_enabled=self.rag_input.value,
+            rag_rewrite_enabled=self.rag_rewrite_input.value,
+            rag_filter_enabled=self.rag_filter_input.value,
+            rag_top_k_before=self.integer(self.rag_top_k_before_input.value, "Кандидатов до отбора"),
+            rag_top_k_after=self.integer(self.rag_top_k_after_input.value, "Максимум фрагментов после отбора"),
+            rag_similarity_threshold=self.rag_threshold_input.value,
             strategy=self.strategy_input.value,
             window_size=self.integer(self.window_input.value, "Размер окна") if self.window_input else current.window_size,
             last_messages=self.integer(self.last_messages_input.value, "Количество последних сообщений", 0) if self.last_messages_input else current.last_messages,
             compress_every=self.integer(self.compress_every_input.value, "Порог сжатия") if self.compress_every_input else current.compress_every,
         )
+        settings.validate()
+        return settings
 
     def save_settings(self) -> None:
         if self.busy:

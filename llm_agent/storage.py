@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Iterator
 
 from .history import HistoryManager
-from .models import ContextSettings, Conversation, RequestOptions, Turn
+from .models import ContextSettings, Conversation, RAGSettings, RequestOptions, Turn
+from .rag_validation import validate_rag_context
 from .tool_events import ToolCallRecord
 
 
@@ -129,13 +130,16 @@ class ConversationStore:
         turns = []
         turn_fields = {field.name for field in fields(Turn)}
         for item in values["turns"]:
-            optional_fields = {"tool_calls", "rag_enabled", "rag_context"}
+            optional_fields = {"tool_calls", "rag_enabled", "rag_context", "rag_settings"}
             if (not isinstance(item, dict) or not set(item) <= turn_fields
                     or not turn_fields - optional_fields <= set(item)):
                 raise ValueError("Некорректный формат хода диалога")
             turn_values = item.copy()
             turn_values["options"] = RequestOptions(**turn_values["options"])
             turn_values["options"].validate()
+            if turn_values.get("rag_settings") is not None:
+                turn_values["rag_settings"] = RAGSettings(**turn_values["rag_settings"])
+                turn_values["rag_settings"].validate()
             tool_calls = turn_values.get("tool_calls", [])
             if not isinstance(tool_calls, list):
                 raise ValueError("Вызовы инструментов должны быть списком")
@@ -157,20 +161,11 @@ class ConversationStore:
             ):
                 raise ValueError("Некорректный ход диалога")
             if turn.rag_context is not None:
-                context = turn.rag_context
-                if (not turn.rag_enabled or not isinstance(context, dict)
-                        or set(context) != {"index", "chunks"}
-                        or not isinstance(context["index"], str)
-                        or not isinstance(context["chunks"], list)
-                        or not context["chunks"]):
+                if not turn.rag_enabled:
                     raise ValueError("Некорректный контекст RAG")
-                for chunk in context["chunks"]:
-                    if (not isinstance(chunk, dict)
-                            or any(not isinstance(chunk.get(key), str)
-                                   for key in ("source", "section", "text", "chunk_id"))
-                            or type(chunk.get("score")) not in (int, float)
-                            or not math.isfinite(chunk["score"])):
-                        raise ValueError("Некорректный фрагмент RAG")
+                validate_rag_context(turn.rag_context, turn.rag_settings)
+            if turn.rag_settings is not None and not turn.rag_enabled:
+                raise ValueError("Настройки RAG сохранены для выключенного режима")
             datetime.fromisoformat(turn.created_at)
             turns.append(turn)
         values["turns"] = turns

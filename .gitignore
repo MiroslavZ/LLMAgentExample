@@ -1,6 +1,7 @@
 # Created by https://www.toptal.com/developers/gitignore/api/visualstudiocode,python,pycharm
 /data/indexes/
 /data/model-cache/
+/data/rag-evaluation/
 # Edit at https://www.toptal.com/developers/gitignore?templates=visualstudiocode,python,pycharm
 
 ### PyCharm ###

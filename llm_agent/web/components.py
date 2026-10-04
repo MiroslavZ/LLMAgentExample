@@ -49,13 +49,69 @@ def _tool_code(content: str, *, language: str) -> None:
     code.markdown.bind_content_from(code, "content", lambda value: f"{fence}{language}\n{value}\n{fence}")
 
 
+def render_rag_context(context: dict) -> None:
+    chunks = context["chunks"]
+    with ui.expansion(f"Источники RAG · {len(chunks)}", icon="library_books").classes("w-full"):
+        ui.label(f"Индекс: {context['index']}").classes("memory-description")
+        if not chunks:
+            ui.label("После отбора релевантных фрагментов не осталось. Ответ не опирается на базу знаний.").classes("setting-note")
+        for number, chunk in enumerate(chunks, start=1):
+            with ui.expansion(f"[{number}] {chunk['source']}", icon="description").classes("w-full"):
+                ui.label(f"Раздел: {chunk['section'] or '—'}").classes("memory-description")
+                ui.label(f"Чанк: {chunk['chunk_id']} · Cosine similarity: {chunk['score']:.3f}").classes("memory-description")
+                ui.label(chunk['text']).classes("whitespace-pre-wrap break-words w-full")
+        if "original_query" not in context:
+            return
+        with ui.expansion("Диагностика поиска и отбора", icon="manage_search").classes("w-full"):
+            ui.label(f"Исходный вопрос: {context['original_query']}").classes("whitespace-pre-wrap break-words")
+            ui.label(f"Поисковый запрос: {context['search_query']}").classes("whitespace-pre-wrap break-words")
+            settings = context["settings"]
+            threshold = str(settings["similarity_threshold"]) if settings["filter_enabled"] else "выключен"
+            ui.label(
+                f"Top-K: {settings['top_k_before']} → {settings['top_k_after']} · Порог cosine: {threshold}"
+            ).classes("memory-description")
+            counts = context["counts"]
+            ui.label(
+                f"Найдено: {counts['found']} · Прошло порог: {counts['passed']} · Передано модели: {counts['selected']}"
+            ).classes("memory-description")
+            rewrite = context["rewrite"]
+            status = {"disabled": "выключен", "success": "выполнен", "fallback": "использован исходный вопрос"}
+            ui.label(f"Query rewrite: {status[rewrite['status']]} · {rewrite['elapsed_seconds']:.2f} с").classes("memory-description")
+            if rewrite.get("reason"):
+                ui.label(f"Причина fallback: {rewrite['reason']}").classes("memory-description")
+            usage = rewrite.get("usage")
+            if usage is not None:
+                ui.label(
+                    f"Токены rewrite: вход {usage['prompt_tokens']} → выход {usage['completion_tokens']} (всего {usage['total_tokens']})"
+                ).classes("memory-description")
+            elif rewrite["status"] != "disabled":
+                ui.label("Токены rewrite: API не вернул статистику").classes("memory-description")
+            ui.label(f"Время поиска и отбора: {context['retrieval_seconds']:.2f} с").classes("memory-description")
+            embedding = context["embedding"]
+            ui.label(f"Эмбеддинги: {embedding.get('model', '—')} · ревизия {embedding.get('revision', '—')}").classes("memory-description break-words")
+            ui.label(f"Хеш корпуса: {context['corpus_hash']}").classes("memory-description break-words")
+            ui.label("Cosine similarity — сходство с поисковым запросом, не вероятность правильного ответа.").classes("setting-note")
+            reasons = {"selected": "Передан модели", "below_threshold": "Ниже порога", "top_k": "За пределами top-K"}
+            ui.table(columns=[
+                {"name": "rank", "label": "Ранг", "field": "rank", "align": "left"},
+                {"name": "source", "label": "Источник", "field": "source", "align": "left"},
+                {"name": "chunk_id", "label": "Чанк", "field": "chunk_id", "align": "left"},
+                {"name": "score", "label": "Cosine", "field": "score", "align": "left"},
+                {"name": "reason", "label": "Отбор", "field": "reason", "align": "left"},
+            ], rows=[{
+                "rank": chunk["original_rank"], "source": chunk["source"], "chunk_id": chunk["chunk_id"],
+                "score": f"{chunk['score']:.3f}", "reason": reasons[chunk["selection_reason"]],
+            } for chunk in context["candidates"]], row_key="chunk_id").classes("w-full").props("dense flat wrap-cells")
+
+
 def render_turn(turn: Turn, *, restore: Callable[[], None], busy: bool) -> None:
     with ui.column().classes("chat-turn"):
         with ui.column().classes("user-message"):
             with ui.row().classes("message-heading"):
                 ui.label("Вы").classes("message-author")
                 ui.label(format_time(turn.created_at)).classes("message-time")
-                ui.label("С RAG" if turn.rag_enabled else "Без RAG").classes("message-time")
+                mode = (turn.rag_settings.mode_label if turn.rag_settings is not None else "С RAG") if turn.rag_enabled else "Без RAG"
+                ui.label(mode).classes("message-time")
             # Пользовательский ввод отображаем буквально, включая пробелы и HTML.
             ui.label(turn.user).classes("user-text")
             ui.button(icon="content_copy", on_click=lambda: ui.clipboard.write(turn.user)).props(
@@ -65,14 +121,7 @@ def render_turn(turn: Turn, *, restore: Callable[[], None], busy: bool) -> None:
             with ui.expansion("Сгенерированный промпт", icon="auto_fix_high").classes("meta-result"):
                 ui.markdown(turn.meta_prompt).classes("message-markdown")
         if turn.rag_context is not None:
-            chunks = turn.rag_context["chunks"]
-            with ui.expansion(f"Источники RAG · {len(chunks)}", icon="library_books").classes("w-full"):
-                ui.label(f"Индекс: {turn.rag_context['index']}").classes("memory-description")
-                for number, chunk in enumerate(chunks, start=1):
-                    with ui.expansion(f"[{number}] {chunk['source']}", icon="description").classes("w-full"):
-                        ui.label(f"Раздел: {chunk['section'] or '—'}").classes("memory-description")
-                        ui.label(f"Чанк: {chunk['chunk_id']} · Сходство: {chunk['score']:.3f}").classes("memory-description")
-                        ui.label(chunk['text']).classes("whitespace-pre-wrap break-words w-full")
+            render_rag_context(turn.rag_context)
         for step, call in enumerate(turn.tool_calls, start=1):
             status = "Ошибка" if call.is_error else "Успешно"
             with ui.expansion(

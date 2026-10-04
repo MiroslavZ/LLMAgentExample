@@ -9,8 +9,10 @@ from unittest.mock import Mock, patch
 from llm_agent.history import HistoryManager
 from llm_agent.indexing.chunking import Chunk, Document, corpus_hash
 from llm_agent.indexing.store import save_index
-from llm_agent.models import ContextSettings, RequestOptions
-from llm_agent.rag import RAGError, RAG_INSTRUCTION, Retriever
+from llm_agent.models import ContextSettings, RAGSettings, RequestOptions
+from llm_agent.rag import RAGError, RAG_INSTRUCTION, Retriever, rewrite_query, select_candidates
+from llm_agent.rag_validation import validate_rag_context
+from llm_agent.storage import ConversationStorageError
 from llm_agent.service import ConversationService
 from tests.helpers import completion
 
@@ -62,7 +64,7 @@ class ConversationRAGTests(unittest.TestCase):
         self.complete.side_effect = answer
         result = self.send()
         self.assertEqual(result.turns[-1].status, "completed")
-        self.service.retriever.retrieve.assert_called_once_with("Вопрос")
+        self.service.retriever.retrieve.assert_called_once_with("Вопрос", RAGSettings(), rewrite=None)
         messages = self.complete.call_args.kwargs["messages"]
         self.assertIn({"role": "system", "content": RAG_INSTRUCTION}, messages)
         self.assertEqual(messages[-1], {"role": "user", "content": "Вопрос"})
@@ -106,14 +108,35 @@ class ConversationRAGTests(unittest.TestCase):
         path = self.service.store.path(result.id)
         data = json.loads(path.read_text(encoding="utf-8"))
         data["settings"].pop("rag_enabled")
+        for key in list(data["settings"]):
+            if key.startswith("rag_"):
+                del data["settings"][key]
         for turn in data["turns"]:
             turn.pop("rag_enabled")
             turn.pop("rag_context")
+            turn.pop("rag_settings")
         path.write_text(json.dumps(data), encoding="utf-8")
         restored = ConversationService(self.directory, "test-token").get(result.id)
         self.assertFalse(restored.settings.rag_enabled)
         self.assertFalse(restored.turns[0].rag_enabled)
         self.assertIsNone(restored.turns[0].rag_context)
+        self.assertFalse(restored.settings.rag_rewrite_enabled)
+        self.assertFalse(restored.settings.rag_filter_enabled)
+
+    def test_day22_rag_enabled_snapshot_remains_readable(self):
+        result = self.send()
+        path = self.service.store.path(result.id)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for key in list(data["settings"]):
+            if key.startswith("rag_") and key != "rag_enabled":
+                del data["settings"][key]
+        data["turns"][0].pop("rag_settings")
+        path.write_text(json.dumps(data), encoding="utf-8")
+        restored = self.service.store.load(result.id)
+        self.assertTrue(restored.settings.rag_enabled)
+        self.assertEqual(restored.turns[0].rag_context, retrieved())
+        self.assertIsNone(restored.turns[0].rag_settings)
+        self.assertEqual(restored.settings.rag_options(), RAGSettings())
 
     def test_small_window_keeps_context_for_current_question(self):
         self.service.send(
@@ -134,7 +157,7 @@ class ConversationRAGTests(unittest.TestCase):
             self.conversation.id, "Исходный вопрос", settings=ContextSettings(rag_enabled=True),
             options=RequestOptions(meta_prompt=True),
         )
-        self.service.retriever.retrieve.assert_called_once_with("Исходный вопрос")
+        self.service.retriever.retrieve.assert_called_once_with("Исходный вопрос", RAGSettings(), rewrite=None)
         self.assertEqual(self.complete.call_count, 2)
         for call in self.complete.call_args_list:
             messages = call.kwargs["messages"]
@@ -152,6 +175,40 @@ class ConversationRAGTests(unittest.TestCase):
         self.assertNotIn("secret-provider-detail", result.turns[-1].error)
         restored = ConversationService(self.directory, "test-token").get(result.id)
         self.assertEqual(restored.turns[-1].rag_context, retrieved())
+
+    @patch("llm_agent.service.rewrite_query")
+    def test_disabled_rag_skips_rewrite_even_if_option_is_enabled(self, rewrite):
+        result = self.service.send(self.conversation.id, "Вопрос", settings=ContextSettings(
+            rag_enabled=False, rag_rewrite_enabled=True, rag_filter_enabled=True,
+        ))
+        rewrite.assert_not_called()
+        self.service.retriever.retrieve.assert_not_called()
+        self.assertIsNone(result.turns[-1].rag_settings)
+
+    @patch("llm_agent.service.rewrite_query")
+    def test_rewrite_is_separate_and_original_question_reaches_generator(self, rewrite):
+        rewrite.return_value = dict(query="Поисковая формулировка", status="success", reason=None,
+                                    elapsed_seconds=0.1, usage=None)
+        result = self.service.send(self.conversation.id, "Исходный вопрос", settings=ContextSettings(
+            rag_enabled=True, rag_rewrite_enabled=True,
+        ), options=RequestOptions(model="chosen-model"))
+        rewrite.assert_called_once_with("Исходный вопрос", "test-token", "chosen-model")
+        self.service.retriever.retrieve.assert_called_once_with(
+            "Исходный вопрос", RAGSettings(rewrite_enabled=True), rewrite=rewrite.return_value,
+        )
+        self.assertEqual(self.complete.call_args.kwargs["messages"][-1]["content"], "Исходный вопрос")
+        self.assertEqual(result.turns[-1].user, "Исходный вопрос")
+        self.assertTrue(result.turns[-1].rag_settings.rewrite_enabled)
+
+    def test_settings_snapshot_survives_later_setting_changes_and_retrieval_error(self):
+        self.service.retriever.retrieve.side_effect = RAGError("RAG: индекс отсутствует")
+        self.service.send(self.conversation.id, "Вопрос", settings=ContextSettings(
+            rag_enabled=True, rag_filter_enabled=True, rag_similarity_threshold=0.8,
+        ))
+        changed = self.service.update_settings(self.conversation.id, ContextSettings())
+        self.assertEqual(changed.turns[-1].rag_settings.similarity_threshold, 0.8)
+        self.assertTrue(changed.turns[-1].rag_settings.filter_enabled)
+        self.assertFalse(changed.settings.rag_enabled)
 
 
 class RetrieverTests(unittest.TestCase):
@@ -239,6 +296,187 @@ class RetrieverTests(unittest.TestCase):
         self.assertNotIn("secret-model-detail", str(error.exception))
         result = self.retriever.retrieve("Короткий")
         self.assertEqual(result["chunks"][0]["chunk_id"], "second")
+
+    def test_filter_threshold_boundary_counts_and_top_k(self):
+        result = self.retriever.retrieve("Вопрос", RAGSettings(
+            filter_enabled=True, similarity_threshold=1.0, top_k_before=2, top_k_after=1,
+        ))
+        self.assertEqual([chunk["chunk_id"] for chunk in result["chunks"]], ["second"])
+        self.assertEqual(result["counts"], dict(found=2, passed=1, selected=1))
+        self.assertEqual([c["selection_reason"] for c in result["candidates"]], ["selected", "below_threshold"])
+        validate_rag_context(result)
+        baseline = self.retriever.retrieve("Вопрос", RAGSettings(top_k_before=2, top_k_after=1))
+        self.assertEqual(baseline["counts"], dict(found=2, passed=2, selected=1))
+        self.assertEqual(baseline["candidates"][1]["selection_reason"], "top_k")
+        validate_rag_context(baseline)
+
+    def test_rewrite_query_is_embedded_and_too_many_tokens_fall_back(self):
+        self.embedder.limit = 5
+        self.embedder.tokenizer.encode.return_value = [1, 2]
+        rewrite = dict(query="Переписанный", status="success", reason=None, elapsed_seconds=0.1, usage=None)
+        settings = RAGSettings(rewrite_enabled=True)
+        result = self.retriever.retrieve("Исходный", settings, rewrite=rewrite)
+        self.embedder.encode.assert_called_with(["Переписанный"], query=True)
+        self.assertEqual(result["original_query"], "Исходный")
+        self.assertEqual(result["search_query"], "Переписанный")
+        validate_rag_context(result)
+        self.embedder.tokenizer.encode.return_value = list(range(6))
+        result = self.retriever.retrieve("Исходный", settings, rewrite=rewrite)
+        self.embedder.encode.assert_called_with(["Исходный"], query=True)
+        self.assertEqual(result["rewrite"]["status"], "fallback")
+        self.assertIn("токенизатора", result["rewrite"]["reason"])
+        self.assertEqual(rewrite["status"], "success")
+        validate_rag_context(result)
+
+    def test_empty_context_persists_and_rejected_chunks_never_reach_llm(self):
+        self.embedder.encode.return_value = [[-1.0, 0.0]]
+        service = ConversationService(self.path.parent / "conversations", "test-token")
+        service.retriever = self.retriever
+        conversation = service.create()
+        with patch("llm_agent.agent.OpenAI") as client:
+            complete = client.return_value.chat.completions.create
+            complete.return_value = completion()
+            result = service.send(conversation.id, "Вопрос", settings=ContextSettings(
+                rag_enabled=True, rag_filter_enabled=True, rag_similarity_threshold=0.5,
+            ))
+        self.assertEqual(result.turns[-1].status, "completed")
+        context = result.turns[-1].rag_context
+        self.assertEqual(context["chunks"], [])
+        self.assertEqual(context["counts"], dict(found=2, passed=0, selected=0))
+        self.assertEqual(service.store.load(result.id), result)
+        messages = json.dumps(complete.call_args.kwargs["messages"], ensure_ascii=False)
+        self.assertIn("релевантных фрагментов не найдено", messages)
+        for text in ("alpha", "beta"):
+            self.assertNotIn(text, messages)
+            self.assertNotIn(text, json.dumps(result.working_context))
+        self.assertEqual(context["settings"]["similarity_threshold"], 0.5)
+        path = service.store.path(result.id)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["turns"][-1]["rag_context"]["counts"]["selected"] = 1
+        path.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaises(ConversationStorageError):
+            service.store.load(result.id)
+
+    def test_ties_keep_index_order_and_baseline_retains_previous_top_five(self):
+        self.save(vectors=[[0.0, 1.0], [0.0, 1.0]])
+        result = self.retriever.retrieve("Вопрос")
+        self.assertEqual([c["chunk_id"] for c in result["chunks"]], ["first", "second"])
+        self.assertEqual([c["original_rank"] for c in result["candidates"]], [1, 2])
+
+    def test_saved_diagnostics_reject_inconsistent_or_nonfinite_values(self):
+        context = self.retriever.retrieve("Вопрос")
+        mutations = [
+            lambda c: c.update(retrieval_seconds=float("nan")),
+            lambda c: c["settings"].update(top_k_after=21),
+            lambda c: c["candidates"][0].update(original_rank=True),
+            lambda c: c["candidates"][0].update(selection_reason="below_threshold"),
+            lambda c: c["rewrite"].update(status="success"),
+            lambda c: c.update(search_query="Другой вопрос при выключенном rewrite"),
+            lambda c: c["chunks"].clear(),
+        ]
+        for mutate in mutations:
+            with self.subTest(mutation=mutate):
+                invalid = deepcopy(context)
+                mutate(invalid)
+                with self.assertRaises(ValueError):
+                    validate_rag_context(invalid)
+        with self.assertRaisesRegex(ValueError, "снимком"):
+            validate_rag_context(context, RAGSettings(filter_enabled=True))
+
+    def test_rewritten_filtered_context_survives_generation_failure(self):
+        self.embedder.limit = 512
+        self.embedder.tokenizer.encode.return_value = [1, 2]
+        service = ConversationService(self.path.parent / "conversations", "test-token")
+        service.retriever = self.retriever
+        conversation = service.create()
+        rewrite = dict(query="Поисковый запрос", status="success", reason=None, elapsed_seconds=0.1,
+                       usage=dict(prompt_tokens=20, completion_tokens=5, total_tokens=25))
+        with patch("llm_agent.service.rewrite_query", return_value=rewrite), patch("llm_agent.agent.OpenAI") as client:
+            complete = client.return_value.chat.completions.create
+            complete.side_effect = RuntimeError("secret-api-detail")
+            result = service.send(conversation.id, "Исходный вопрос", settings=ContextSettings(
+                rag_enabled=True, rag_rewrite_enabled=True, rag_filter_enabled=True,
+                rag_similarity_threshold=0.5,
+            ))
+        self.assertEqual(result.turns[-1].status, "error")
+        self.assertNotIn("secret-api-detail", result.turns[-1].error)
+        self.assertEqual(service.store.load(result.id), result)
+        context = result.turns[-1].rag_context
+        self.assertEqual(context["rewrite"]["usage"]["total_tokens"], 25)
+        self.assertEqual(context["search_query"], "Поисковый запрос")
+        self.assertEqual(context["counts"], dict(found=2, passed=1, selected=1))
+        messages = complete.call_args.kwargs["messages"]
+        self.assertEqual(messages[-1]["content"], "Исходный вопрос")
+        fragments = json.loads(messages[-2]["content"].split("\n", 1)[1])
+        self.assertEqual([chunk["text"] for chunk in fragments], ["beta"])
+        self.assertNotIn("alpha", json.dumps(messages))
+        self.embedder.encode.assert_called_once_with(["Поисковый запрос"], query=True)
+
+
+class RewriteTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch("llm_agent.rag.OpenAI")
+        self.client_class = patcher.start()
+        self.addCleanup(patcher.stop)
+        self.complete = self.client_class.return_value.__enter__.return_value.chat.completions.create
+        self.response = completion()
+        self.response.choices[0].message.content = "  Запрос для поиска  "
+        self.complete.return_value = self.response
+
+    def test_short_service_request_has_no_history_or_tools_and_tracks_usage(self):
+        result = rewrite_query("Исходный вопрос", "test-token", "model")
+        self.assertEqual(result["query"], "Запрос для поиска")
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["usage"]["total_tokens"], 130)
+        self.assertGreaterEqual(result["elapsed_seconds"], 0)
+        request = self.complete.call_args.kwargs
+        self.assertEqual(request["model"], "model")
+        self.assertEqual(len(request["messages"]), 2)
+        self.assertNotIn("tools", request)
+        self.assertEqual(request["max_tokens"], 200)
+        self.assertEqual(self.client_class.call_args.kwargs["timeout"], 15.0)
+        self.assertEqual(self.client_class.call_args.kwargs["max_retries"], 0)
+
+    def test_empty_truncated_oversized_and_failed_rewrites_use_original(self):
+        for text, reason in (("  ", "stop"), ("Часть", "length"), ("x" * 1501, "stop")):
+            with self.subTest(text=text[:20], reason=reason):
+                self.response.choices[0].message.content = text
+                self.response.choices[0].finish_reason = reason
+                result = rewrite_query("Исходный", "test-token", "model")
+                self.assertEqual(result["query"], "Исходный")
+                self.assertEqual(result["status"], "fallback")
+                self.assertTrue(result["reason"])
+                self.assertEqual(result["usage"]["total_tokens"], 130)
+        self.complete.side_effect = RuntimeError("secret-provider-detail")
+        result = rewrite_query("Исходный", "test-token", "model")
+        self.assertEqual(result["query"], "Исходный")
+        self.assertNotIn("secret-provider-detail", json.dumps(result))
+        self.assertIsNone(result["usage"])
+
+
+class RAGSettingsTests(unittest.TestCase):
+    def test_invalid_settings_are_rejected(self):
+        for values in (
+            {"top_k_before": 0}, {"top_k_after": 21}, {"top_k_after": True},
+            {"top_k_before": 20.5}, {"similarity_threshold": float("nan")},
+            {"similarity_threshold": float("inf")}, {"similarity_threshold": 1.01},
+            {"similarity_threshold": -1.01}, {"similarity_threshold": False},
+            {"rewrite_enabled": 1}, {"filter_enabled": "true"},
+        ):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                RAGSettings(**values).validate()
+
+    def test_negative_score_boundary_and_selection_do_not_mutate_candidates(self):
+        matches = [dict(retrieved()["chunks"][0], chunk_id=str(i), score=score)
+                   for i, score in enumerate([0.2, -0.5, -0.6])]
+        before = deepcopy(matches)
+        selected, candidates, counts = select_candidates(matches, RAGSettings(
+            filter_enabled=True, similarity_threshold=-0.5, top_k_after=2,
+        ))
+        self.assertEqual([c["score"] for c in selected], [0.2, -0.5])
+        self.assertEqual(counts, dict(found=3, passed=2, selected=2))
+        self.assertEqual(matches, before)
+        self.assertEqual(candidates[-1]["selection_reason"], "below_threshold")
 
 
 if __name__ == "__main__":

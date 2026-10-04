@@ -4,14 +4,14 @@ import asyncio
 import inspect
 import tempfile
 import unittest
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from nicegui import Client, core, ui
 from nicegui.elements.timer import Timer
 
-from llm_agent.models import ContextSettings, Turn
+from llm_agent.models import ContextSettings, RAGSettings, Turn
 from llm_agent.service import ConversationService, ConversationStorageError
 from llm_agent.tool_events import ToolAttachment, ToolCallRecord
 from llm_agent.web.components import render_turn
@@ -104,6 +104,104 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
         expansions = [element for element in transcript.descendants() if isinstance(element, ui.expansion)]
         self.assertEqual([element.text for element in expansions], ["Источники RAG · 1", "[1] <b>file.md</b>"])
         self.assertTrue(all(not element.value for element in expansions))
+
+    async def test_rag_controls_react_before_save_and_preserve_disabled_settings(self):
+        with self.client:
+            page = self.build_page()
+            dependent = (page.rag_rewrite_input, page.rag_filter_input,
+                         page.rag_top_k_before_input, page.rag_top_k_after_input)
+            self.assertTrue(all(not widget.enabled for widget in dependent))
+            self.assertFalse(page.rag_threshold_input.enabled)
+            page.rag_input.set_value(True)
+            self.assertTrue(all(widget.enabled for widget in dependent))
+            self.assertFalse(page.rag_threshold_input.enabled)
+            page.rag_filter_input.set_value(True)
+            self.assertTrue(page.rag_threshold_input.enabled)
+            page.rag_rewrite_input.set_value(True)
+            page.rag_top_k_before_input.set_value(12)
+            page.rag_top_k_after_input.set_value(3)
+            page.rag_threshold_input.set_value(0.77)
+            page.save_settings()
+            expected = ContextSettings(rag_enabled=True, rag_filter_enabled=True, rag_rewrite_enabled=True,
+                                       rag_top_k_before=12, rag_top_k_after=3, rag_similarity_threshold=0.77)
+            self.assertEqual(self.service.get(self.conversation.id).settings, expected)
+            page.rag_input.set_value(False)
+            self.assertFalse(page.rag_filter_input.enabled)
+            self.assertFalse(page.rag_rewrite_input.enabled)
+            self.assertFalse(page.rag_threshold_input.enabled)
+            page.save_settings()
+            self.assertEqual(self.service.get(self.conversation.id).settings, replace(expected, rag_enabled=False))
+
+    async def test_running_request_disables_all_rag_controls(self):
+        self.queue_submissions()
+        self.service.update_settings(self.conversation.id, ContextSettings(rag_enabled=True, rag_filter_enabled=True))
+        with self.client:
+            page = self.build_page()
+            page.user_input.set_value("Вопрос")
+            page.send()
+            self.assertTrue(page.busy)
+            self.assertTrue(all(not widget.enabled for widget in (
+                page.rag_input, page.rag_rewrite_input, page.rag_filter_input,
+                page.rag_top_k_before_input, page.rag_top_k_after_input, page.rag_threshold_input,
+            )))
+
+    async def test_invalid_rag_limits_do_not_submit_or_clear_draft(self):
+        submit = self.queue_submissions()
+        with self.client:
+            page = self.build_page()
+            page.rag_input.set_value(True)
+            page.rag_top_k_before_input.set_value(2)
+            page.rag_top_k_after_input.set_value(3)
+            page.user_input.set_value("Сохранить вопрос")
+            page.send()
+        submit.assert_not_called()
+        self.assertEqual(page.user_input.value, "Сохранить вопрос")
+        self.assertFalse(self.service.get(self.conversation.id).settings.rag_enabled)
+        self.assertIn("top-K", self.notify.call_args.args[0])
+
+    async def test_rag_empty_context_displays_diagnostics_and_literal_fallback(self):
+        settings = RAGSettings(rewrite_enabled=True, filter_enabled=True, similarity_threshold=0.9)
+        context = {
+            "index": "test-index", "chunks": [], "settings": asdict(settings),
+            "original_query": "<b>Вопрос</b>", "search_query": "<b>Вопрос</b>",
+            "rewrite": {"status": "fallback", "reason": "<script>failed</script>",
+                        "elapsed_seconds": 0.12, "usage": {"prompt_tokens": 20, "completion_tokens": 2, "total_tokens": 22}},
+            "candidates": [{"source": "<b>file.md</b>", "section": "", "text": "Текст", "score": 0.8,
+                            "chunk_id": "c1", "original_rank": 1, "selection_reason": "below_threshold"}],
+            "counts": {"found": 1, "passed": 0, "selected": 0}, "retrieval_seconds": 0.3,
+            "embedding": {"model": "test-model", "revision": "abc"}, "corpus_hash": "corpus-hash",
+        }
+        with self.client, ui.column() as transcript:
+            render_turn(Turn(user="Вопрос", rag_enabled=True, rag_settings=settings, rag_context=context),
+                        restore=lambda: None, busy=False)
+        labels = self.labels(transcript)
+        self.assertIn("RAG + rewrite + фильтр", labels)
+        self.assertIn("После отбора релевантных фрагментов не осталось. Ответ не опирается на базу знаний.", labels)
+        self.assertIn("Исходный вопрос: <b>Вопрос</b>", labels)
+        self.assertIn("Причина fallback: <script>failed</script>", labels)
+        self.assertIn("Найдено: 1 · Прошло порог: 0 · Передано модели: 0", labels)
+        self.assertIn("Токены rewrite: вход 20 → выход 2 (всего 22)", labels)
+        table = next(element for element in transcript.descendants() if isinstance(element, ui.table))
+        self.assertEqual(table.rows, [{"rank": 1, "source": "<b>file.md</b>", "chunk_id": "c1",
+                                       "score": "0.800", "reason": "Ниже порога"}])
+        self.assertFalse(any(isinstance(element, ui.markdown) for element in transcript.descendants()))
+        self.assertTrue(all(not element.value for element in transcript.descendants() if isinstance(element, ui.expansion)))
+
+    async def test_rag_mode_label_uses_each_turn_snapshot_even_after_error(self):
+        turns = [
+            Turn(user="Первый", rag_enabled=True, rag_settings=RAGSettings()),
+            Turn(user="Второй", rag_enabled=True, rag_settings=RAGSettings(filter_enabled=True),
+                 status="error", error="Индекс недоступен"),
+            Turn(user="Третий", rag_enabled=False, rag_settings=RAGSettings(rewrite_enabled=True)),
+        ]
+        with self.client, ui.column() as transcript:
+            for turn in turns:
+                render_turn(turn, restore=lambda: None, busy=False)
+        labels = self.labels(transcript)
+        self.assertIn("Базовый RAG", labels)
+        self.assertIn("RAG + фильтр", labels)
+        self.assertIn("Без RAG", labels)
+        self.assertNotIn("RAG + rewrite", labels)
 
     async def test_cli_command_tracks_selected_conversation_and_uses_quoted_path(self):
         with self.client:

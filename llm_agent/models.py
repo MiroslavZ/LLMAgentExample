@@ -15,16 +15,56 @@ def utc_now() -> str:
 
 
 @dataclass(frozen=True)
+class RAGSettings:
+    rewrite_enabled: bool = False
+    filter_enabled: bool = False
+    top_k_before: int = 20
+    top_k_after: int = 5
+    similarity_threshold: float = 0.35
+
+    def validate(self) -> None:
+        if any(type(value) is not bool for value in (self.rewrite_enabled, self.filter_enabled)):
+            raise ValueError("Переключатели RAG должны быть логическими значениями")
+        if (type(self.top_k_before) is not int or type(self.top_k_after) is not int
+                or not 1 <= self.top_k_after <= self.top_k_before):
+            raise ValueError("RAG: требуется 1 ≤ top-K после ≤ top-K до; значения должны быть целыми")
+        if (type(self.similarity_threshold) not in (int, float)
+                or not math.isfinite(self.similarity_threshold)
+                or not -1 <= self.similarity_threshold <= 1):
+            raise ValueError("Порог cosine должен быть конечным числом от -1 до 1")
+
+    @property
+    def mode_label(self) -> str:
+        suffix = [name for enabled, name in (
+            (self.rewrite_enabled, "rewrite"), (self.filter_enabled, "фильтр"),
+        ) if enabled]
+        return "RAG + " + " + ".join(suffix) if suffix else "Базовый RAG"
+
+
+@dataclass(frozen=True)
 class ContextSettings:
     strategy: str = "full"
     window_size: int = 10
     last_messages: int = 6
     compress_every: int = 10
     rag_enabled: bool = False
+    rag_rewrite_enabled: bool = False
+    rag_filter_enabled: bool = False
+    rag_top_k_before: int = 20
+    rag_top_k_after: int = 5
+    rag_similarity_threshold: float = 0.35
+
+    def rag_options(self) -> RAGSettings:
+        return RAGSettings(
+            rewrite_enabled=self.rag_rewrite_enabled, filter_enabled=self.rag_filter_enabled,
+            top_k_before=self.rag_top_k_before, top_k_after=self.rag_top_k_after,
+            similarity_threshold=self.rag_similarity_threshold,
+        )
 
     def validate(self) -> None:
         if type(self.rag_enabled) is not bool:
             raise ValueError("Режим RAG должен быть логическим значением")
+        self.rag_options().validate()
         if self.strategy not in ("full", "window", "facts", "summary"):
             raise ValueError("Выберите поддерживаемую стратегию контекста")
         if type(self.window_size) is not int or self.window_size <= 0:
@@ -87,6 +127,7 @@ class Turn:
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
     rag_enabled: bool = False
     rag_context: dict | None = None
+    rag_settings: RAGSettings | None = None
 
 
 @dataclass

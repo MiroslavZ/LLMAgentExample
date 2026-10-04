@@ -32,7 +32,7 @@ from .storage import ConversationBusyError, ConversationStorageError, Conversati
 from .task_state import CONTINUE_TASK, PLAN_APPROVAL_REQUIRED, TaskStage, TaskState, TaskStateError
 from .tool_events import ToolCallRecord
 from .observations import ObservationReader, is_observation
-from .rag import RAGError, Retriever
+from .rag import RAGError, Retriever, rewrite_query
 
 
 class _ConversationHistory(HistoryManager):
@@ -469,7 +469,10 @@ class ConversationService:
                 conversation.system_prompt = system_prompt
                 conversation.title = " ".join(user.split())[:56]
                 conversation.started = True
-            conversation.turns.append(Turn(user=user.strip(), options=options, rag_enabled=conversation.settings.rag_enabled))
+            conversation.turns.append(Turn(
+                user=user.strip(), options=options, rag_enabled=conversation.settings.rag_enabled,
+                rag_settings=conversation.settings.rag_options() if conversation.settings.rag_enabled else None,
+            ))
             conversation.updated_at = utc_now()
             self._save(conversation)
             started_at = time.perf_counter()
@@ -485,7 +488,13 @@ class ConversationService:
                     self._save(conversation)
                     return deepcopy(conversation)
                 if conversation.settings.rag_enabled:
-                    conversation.turns[-1].rag_context = self.retriever.retrieve(user.strip())
+                    rag_settings = conversation.turns[-1].rag_settings
+                    rewritten = None
+                    if rag_settings.rewrite_enabled:
+                        rewritten = rewrite_query(user.strip(), self._token, options.model or DEFAULT_MODEL)
+                    conversation.turns[-1].rag_context = self.retriever.retrieve(
+                        user.strip(), rag_settings, rewrite=rewritten,
+                    )
                     self._save(conversation)
                 memory = self.memory.snapshot(conversation_id)
                 profile = self.profiles.selected(conversation_id)

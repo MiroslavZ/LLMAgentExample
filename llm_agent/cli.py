@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -35,6 +36,10 @@ from .service import ConversationService
 from .storage import DEFAULT_DATA_DIR, ConversationBusyError, ConversationStorageError
 
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+RAG_SETTING_FIELDS = (
+    "rag_enabled", "rag_rewrite_enabled", "rag_filter_enabled",
+    "rag_top_k_before", "rag_top_k_after", "rag_similarity_threshold",
+)
 
 console = Console()
 
@@ -50,6 +55,13 @@ def nonnegative_int(value: str) -> int:
     number = int(value)
     if number < 0:
         raise argparse.ArgumentTypeError("Значение должно быть не меньше нуля")
+    return number
+
+
+def cosine_threshold(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number) or not -1 <= number <= 1:
+        raise argparse.ArgumentTypeError("Порог cosine должен быть конечным числом от -1 до 1")
     return number
 
 
@@ -81,6 +93,22 @@ def parse_args() -> argparse.Namespace:
                      help="Включить поиск по базе знаний; без флага сохраняется режим диалога")
     rag.add_argument("--no-rag", dest="rag_enabled", action="store_false",
                      help="Отключить поиск по базе знаний")
+    rewrite = parser.add_mutually_exclusive_group()
+    rewrite.add_argument("--rag-rewrite", dest="rag_rewrite_enabled", action="store_true", default=None,
+                         help="Переписывать поисковый запрос отдельным вызовом модели")
+    rewrite.add_argument("--no-rag-rewrite", dest="rag_rewrite_enabled", action="store_false",
+                         help="Искать по исходному вопросу")
+    relevance = parser.add_mutually_exclusive_group()
+    relevance.add_argument("--rag-filter", dest="rag_filter_enabled", action="store_true", default=None,
+                           help="Отсекать кандидатов ниже порога cosine similarity")
+    relevance.add_argument("--no-rag-filter", dest="rag_filter_enabled", action="store_false",
+                           help="Не применять порог релевантности")
+    parser.add_argument("--rag-top-k-before", type=positive_int, metavar="N",
+                        help="Количество кандидатов поиска до отбора")
+    parser.add_argument("--rag-top-k-after", type=positive_int, metavar="N",
+                        help="Максимум фрагментов после отбора; не больше --rag-top-k-before")
+    parser.add_argument("--rag-similarity-threshold", type=cosine_threshold, metavar="SCORE",
+                        help="Минимальное cosine similarity от -1 до 1; действует с --rag-filter")
     parser.add_argument("--mcp-url", help="Сохранить общий MCP-сервер для CLI и веба (ID: cli)")
     parser.add_argument("--mcp-token-env", default="", help="Имя переменной с MCP Bearer-токеном (не сам токен)")
     task_action = parser.add_mutually_exclusive_group()
@@ -225,6 +253,7 @@ def parse_args() -> argparse.Namespace:
         help="Показать действующие инварианты в JSON без обращения к API",
     )
     args = parser.parse_args()
+    rag_changed = any(getattr(args, name) is not None for name in RAG_SETTING_FIELDS)
     if args.batch:
         if not args.conversation or args.user is None:
             parser.error("--batch требует явные --conversation и --user")
@@ -275,14 +304,14 @@ def parse_args() -> argparse.Namespace:
             parser.error("Ключ и значение памяти должны быть непустыми строками")
     if args.invariants_show and (
         args.user is not None or any(profile_options) or any(task_options)
-        or memory_edit or args.memory_show or args.memory_clear_working or args.new_conversation
+        or memory_edit or args.memory_show or args.memory_clear_working or args.new_conversation or rag_changed
     ):
         parser.error("--invariants-show совмещается только с --invariants-import и выбором файла")
     if args.user is None:
         if not any(profile_options) and not any(task_options) and not (
             args.invariants_import or args.invariants_show or args.new_conversation
             or args.list_conversations or args.show_conversation or
-            args.rag_enabled is not None or
+            rag_changed or
             memory_edit or args.memory_show or args.memory_clear_working
         ):
             parser.error("Укажите --user или операцию с диалогами, памятью, профилями, задачей или инвариантами")
@@ -303,7 +332,7 @@ def parse_args() -> argparse.Namespace:
         args.user is not None or any(task_options) or any(profile_options) or memory_edit
         or args.memory_show or args.memory_clear_working or args.invariants_import
         or args.invariants_show or args.new_conversation or all(views) or args.mcp_url
-        or args.rag_enabled is not None
+        or rag_changed
     ):
         parser.error("Просмотр диалогов нельзя совмещать с другими операциями")
     if args.list_conversations and args.conversation:
@@ -313,7 +342,7 @@ def parse_args() -> argparse.Namespace:
         or args.task_approve or args.task_continue or args.memory_set or args.memory_delete
         or args.memory_show or args.memory_clear_working or args.profile or args.profile_clear
         or args.profile_show
-        or args.rag_enabled is not None
+        or rag_changed
     )
     if requires_conversation and not (args.conversation or args.new_conversation or args.user is not None or args.task_start):
         parser.error("Выберите --conversation ID_OR_PATH или создайте --new-conversation")
@@ -546,9 +575,7 @@ def print_json(value: object) -> None:
 
 
 def context_settings(args: argparse.Namespace, current: ContextSettings) -> ContextSettings:
-    updates = {}
-    if args.rag_enabled is not None:
-        updates["rag_enabled"] = args.rag_enabled
+    updates = {name: getattr(args, name) for name in RAG_SETTING_FIELDS if getattr(args, name) is not None}
     if args.strategy is not None:
         updates["strategy"] = args.strategy
     if args.window_size is not None:
@@ -609,7 +636,6 @@ def send_message(args: argparse.Namespace, conversation: Conversation, options: 
     responses: list[RequestResult] = []
     compressions: list[CompressionResult] = []
     print_request_info(args, system=conversation.system_prompt or args.system, user=args.user)
-    console.print("Режим: с RAG" if settings.rag_enabled else "Режим: без RAG")
     with console.status("[bold cyan]Ожидание ответа модели…", spinner="dots"):
         result = service.send(
             conversation.id, args.user, system_prompt=args.system or "", options=options,
@@ -619,6 +645,8 @@ def send_message(args: argparse.Namespace, conversation: Conversation, options: 
     for compression in compressions:
         print_compression(compression)
     turn = result.turns[-1]
+    mode = (turn.rag_settings.mode_label if turn.rag_settings is not None else "С RAG") if turn.rag_enabled else "Без RAG"
+    console.print(Text(f"Режим: {mode}"))
     print_rag_sources(turn)
     for tool_call in turn.tool_calls:
         print_tool_call(tool_call)
@@ -641,14 +669,47 @@ def send_message(args: argparse.Namespace, conversation: Conversation, options: 
 def print_rag_sources(turn: Turn) -> None:
     if turn.rag_context is None:
         return
+    context = turn.rag_context
     sources = Table(title="Источники RAG")
-    for column in ("№", "Источник", "Раздел", "Чанк", "Сходство"):
+    for column in ("№", "Источник", "Раздел", "Чанк", "Cosine similarity"):
         sources.add_column(column)
-    for number, chunk in enumerate(turn.rag_context["chunks"], start=1):
+    for number, chunk in enumerate(context["chunks"], start=1):
         sources.add_row(str(number), Text(chunk["source"]), Text(chunk["section"] or "—"),
                         Text(str(chunk["chunk_id"])), f"{chunk['score']:.3f}")
-    console.print(Text(f"Индекс: {turn.rag_context['index']}"))
+    console.print(Text(f"Индекс: {context['index']}"))
     console.print(sources)
+    if not context["chunks"]:
+        console.print("После отбора релевантных фрагментов не осталось. Ответ не опирается на базу знаний.")
+    if "original_query" not in context:
+        return
+    console.print(Text(f"Исходный вопрос: {context['original_query']}\nПоисковый запрос: {context['search_query']}"))
+    settings = context["settings"]
+    threshold = str(settings["similarity_threshold"]) if settings["filter_enabled"] else "выключен"
+    console.print(f"Top-K: {settings['top_k_before']} → {settings['top_k_after']} · Порог cosine: {threshold}")
+    counts = context["counts"]
+    console.print(f"Найдено: {counts['found']} · Прошло порог: {counts['passed']} · Передано модели: {counts['selected']}")
+    rewrite = context["rewrite"]
+    status = {"disabled": "выключен", "success": "выполнен", "fallback": "использован исходный вопрос"}
+    console.print(f"Query rewrite: {status[rewrite['status']]} · {rewrite['elapsed_seconds']:.2f} с")
+    if rewrite.get("reason"):
+        console.print(Text(f"Причина fallback: {rewrite['reason']}"))
+    usage = rewrite.get("usage")
+    if usage is not None:
+        console.print(f"Токены rewrite: вход {usage['prompt_tokens']} → выход {usage['completion_tokens']} (всего {usage['total_tokens']})")
+    elif rewrite["status"] != "disabled":
+        console.print("Токены rewrite: API не вернул статистику")
+    console.print(f"Время поиска и отбора: {context['retrieval_seconds']:.2f} с")
+    embedding = context["embedding"]
+    console.print(Text(f"Эмбеддинги: {embedding.get('model', '—')} · ревизия {embedding.get('revision', '—')}\nХеш корпуса: {context['corpus_hash']}"))
+    candidates = Table(title="Кандидаты до отбора")
+    for column in ("Ранг", "Источник", "Чанк", "Cosine", "Отбор"):
+        candidates.add_column(column)
+    reasons = {"selected": "Передан модели", "below_threshold": "Ниже порога", "top_k": "За пределами top-K"}
+    for chunk in context["candidates"]:
+        candidates.add_row(str(chunk["original_rank"]), Text(chunk["source"]), Text(str(chunk["chunk_id"])),
+                           f"{chunk['score']:.3f}", reasons[chunk["selection_reason"]])
+    console.print(candidates)
+    console.print("Cosine similarity — сходство с поисковым запросом, не вероятность правильного ответа.")
 
 
 def main() -> None:

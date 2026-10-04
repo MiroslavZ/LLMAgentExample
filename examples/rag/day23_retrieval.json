@@ -1,0 +1,3873 @@
+{
+  "created_at": "2026-10-03T17:40:42.728247+00:00",
+  "kind": "retrieval_only_with_failed_network_probe",
+  "index_sha256": "3965976099254334407ea5cb46f60e9d61830675de4dabd9a8f461c3169b7822",
+  "index_metadata": {
+    "schema_version": 1,
+    "created_at": "2026-10-03T09:15:35.542773+00:00",
+    "corpus_hash": "7a7c0982d1cf035b7a98162042ba0695ef4ed18c26e12109e9c4d3eccd222b39",
+    "strategy": "structural",
+    "size": 350,
+    "overlap": 50,
+    "chunk_count": 138,
+    "embedding": {
+      "model": "DeepPavlov/rubert-base-cased",
+      "revision": "4036cab694767a299f2b9e6492909664d9414229",
+      "dimension": 768,
+      "limit": 512,
+      "passage_prefix": "",
+      "query_prefix": "",
+      "pooling": "attention_mask_mean",
+      "normalized": true,
+      "versions": {
+        "torch": "2.14.1",
+        "transformers": "5.18.0",
+        "numpy": "2.4.6"
+      }
+    },
+    "chunk_seconds": 0.1616950999959954,
+    "embedding_seconds": 23.726214300004358
+  },
+  "corpus_documents": [
+    {
+      "source": "docs/CHAT.md",
+      "sha256": "af3b93739bc1dc63bc40e51e6c840892d9d1b591274277eb007d714781d54a78"
+    },
+    {
+      "source": "docs/DAY22_PLAN.md",
+      "sha256": "cf3c6cb065134bafd9666ef2826c8127f1b905fd6dc2b5298c446bc0f1f0de38"
+    },
+    {
+      "source": "docs/INDEXING.md",
+      "sha256": "33516d62b127e950212eb295a8a72b088114ea0211de90e44e79e60c6d85da96"
+    },
+    {
+      "source": "docs/INVARIANTS.md",
+      "sha256": "6322b18469006e477c1355258eeebed4f0f06461edd012a5c7c13be083d464f4"
+    },
+    {
+      "source": "docs/LECTURE.md",
+      "sha256": "4150635dbdbb45fd225152af1e254e596fd69304925df0cf407001994a7ca051"
+    },
+    {
+      "source": "docs/MCP.md",
+      "sha256": "86a0f54617978eee35739ae5697554be4e4f53d4f9ac870ac5780c43262c0ea4"
+    },
+    {
+      "source": "docs/MEMORY.md",
+      "sha256": "d56815bf34a8227a0e0d1a5b98e5a8d5dcc8dbaf831a366613448d046c4d4c55"
+    },
+    {
+      "source": "docs/ORCHESTRATION.md",
+      "sha256": "cdd9a666966bb55cc85e482ca20882ce5fc265fa5f909af3bffad7aa9343216b"
+    },
+    {
+      "source": "docs/PERSONALIZATION.md",
+      "sha256": "d5f1faaa1b8ee28f0627cca2ef12d189d40d317da9fd2d21dc2cd46bb692e8c7"
+    },
+    {
+      "source": "docs/RAG.md",
+      "sha256": "4ac3ff62320e603307263fd560670e59aae6b57d63ee2e620f78d92cfbd35049"
+    },
+    {
+      "source": "docs/SCHEDULING.md",
+      "sha256": "04a53d10598a5dbe2a49940e6f0b4170e15f0b2aa973e64415e35e86ecfd45f1"
+    },
+    {
+      "source": "docs/TASKS.md",
+      "sha256": "380a76906cfc93c0cd00ef99909ef3d883b15681c12c4c963d0b54e20eda0dad"
+    },
+    {
+      "source": "docs/TASK_STATE.md",
+      "sha256": "f28eb8bbef5791f33b343ad78b9d3efeefcaf6df68ac1aa3786d9196293833e4"
+    }
+  ],
+  "question_overlaps_in_corpus": [
+    {
+      "question_number": 4,
+      "source": "docs/RAG.md"
+    }
+  ],
+  "limitation": "The current corpus includes prior evaluation documentation. This is not an independent held-out test. No LLM answers were generated; answer quality is unmeasured.",
+  "settings": {
+    "top_k_before": 20,
+    "top_k_after": 5,
+    "similarity_threshold": 0.35
+  },
+  "benchmark_summary": {
+    "baseline": {
+      "runs": 10,
+      "answers_completed": 0,
+      "mode_answers_completed": 0,
+      "errors": 0,
+      "retrievals": 10,
+      "evaluated_retrievals": 10,
+      "rewrite_successes": 0,
+      "rewrite_fallbacks": 0,
+      "evidence_questions": 10,
+      "candidate_hits": 4,
+      "selected_hits": 4,
+      "empty_contexts": 0,
+      "mean_selected_chunks": 5.0,
+      "manual_scores_count": 0,
+      "manual_score_sum": null
+    },
+    "filtered": {
+      "runs": 10,
+      "answers_completed": 0,
+      "mode_answers_completed": 0,
+      "errors": 0,
+      "retrievals": 10,
+      "evaluated_retrievals": 10,
+      "rewrite_successes": 0,
+      "rewrite_fallbacks": 0,
+      "evidence_questions": 10,
+      "candidate_hits": 4,
+      "selected_hits": 4,
+      "empty_contexts": 0,
+      "mean_selected_chunks": 5.0,
+      "manual_scores_count": 0,
+      "manual_score_sum": null
+    }
+  },
+  "additional_summary": {
+    "baseline": {
+      "runs": 6,
+      "answers_completed": 0,
+      "mode_answers_completed": 0,
+      "errors": 0,
+      "retrievals": 6,
+      "evaluated_retrievals": 6,
+      "rewrite_successes": 0,
+      "rewrite_fallbacks": 0,
+      "evidence_questions": 3,
+      "candidate_hits": 2,
+      "selected_hits": 1,
+      "empty_contexts": 0,
+      "mean_selected_chunks": 5.0,
+      "manual_scores_count": 0,
+      "manual_score_sum": null
+    },
+    "filtered": {
+      "runs": 6,
+      "answers_completed": 0,
+      "mode_answers_completed": 0,
+      "errors": 0,
+      "retrievals": 6,
+      "evaluated_retrievals": 6,
+      "rewrite_successes": 0,
+      "rewrite_fallbacks": 0,
+      "evidence_questions": 3,
+      "candidate_hits": 2,
+      "selected_hits": 1,
+      "empty_contexts": 1,
+      "mean_selected_chunks": 3.3333333333333335,
+      "manual_scores_count": 0,
+      "manual_score_sum": null
+    }
+  },
+  "threshold_sweep": [
+    {
+      "threshold": 0.3,
+      "groups": {
+        "benchmark": {
+          "questions": 10,
+          "evidence_hits": 4,
+          "selected_chunks": 50,
+          "empty_contexts": 0
+        },
+        "paraphrase": {
+          "questions": 3,
+          "evidence_hits": 1,
+          "selected_chunks": 15,
+          "empty_contexts": 0
+        },
+        "out_of_corpus": {
+          "questions": 3,
+          "evidence_hits": null,
+          "selected_chunks": 12,
+          "empty_contexts": 0
+        }
+      }
+    },
+    {
+      "threshold": 0.35,
+      "groups": {
+        "benchmark": {
+          "questions": 10,
+          "evidence_hits": 4,
+          "selected_chunks": 50,
+          "empty_contexts": 0
+        },
+        "paraphrase": {
+          "questions": 3,
+          "evidence_hits": 1,
+          "selected_chunks": 15,
+          "empty_contexts": 0
+        },
+        "out_of_corpus": {
+          "questions": 3,
+          "evidence_hits": null,
+          "selected_chunks": 5,
+          "empty_contexts": 1
+        }
+      }
+    },
+    {
+      "threshold": 0.36,
+      "groups": {
+        "benchmark": {
+          "questions": 10,
+          "evidence_hits": 4,
+          "selected_chunks": 50,
+          "empty_contexts": 0
+        },
+        "paraphrase": {
+          "questions": 3,
+          "evidence_hits": 1,
+          "selected_chunks": 15,
+          "empty_contexts": 0
+        },
+        "out_of_corpus": {
+          "questions": 3,
+          "evidence_hits": null,
+          "selected_chunks": 4,
+          "empty_contexts": 1
+        }
+      }
+    },
+    {
+      "threshold": 0.4,
+      "groups": {
+        "benchmark": {
+          "questions": 10,
+          "evidence_hits": 3,
+          "selected_chunks": 46,
+          "empty_contexts": 0
+        },
+        "paraphrase": {
+          "questions": 3,
+          "evidence_hits": 1,
+          "selected_chunks": 11,
+          "empty_contexts": 0
+        },
+        "out_of_corpus": {
+          "questions": 3,
+          "evidence_hits": null,
+          "selected_chunks": 2,
+          "empty_contexts": 1
+        }
+      }
+    },
+    {
+      "threshold": 0.45,
+      "groups": {
+        "benchmark": {
+          "questions": 10,
+          "evidence_hits": 3,
+          "selected_chunks": 42,
+          "empty_contexts": 1
+        },
+        "paraphrase": {
+          "questions": 3,
+          "evidence_hits": 1,
+          "selected_chunks": 5,
+          "empty_contexts": 2
+        },
+        "out_of_corpus": {
+          "questions": 3,
+          "evidence_hits": null,
+          "selected_chunks": 0,
+          "empty_contexts": 3
+        }
+      }
+    },
+    {
+      "threshold": 0.5,
+      "groups": {
+        "benchmark": {
+          "questions": 10,
+          "evidence_hits": 2,
+          "selected_chunks": 32,
+          "empty_contexts": 2
+        },
+        "paraphrase": {
+          "questions": 3,
+          "evidence_hits": 1,
+          "selected_chunks": 2,
+          "empty_contexts": 2
+        },
+        "out_of_corpus": {
+          "questions": 3,
+          "evidence_hits": null,
+          "selected_chunks": 0,
+          "empty_contexts": 3
+        }
+      }
+    },
+    {
+      "threshold": 0.55,
+      "groups": {
+        "benchmark": {
+          "questions": 10,
+          "evidence_hits": 1,
+          "selected_chunks": 15,
+          "empty_contexts": 7
+        },
+        "paraphrase": {
+          "questions": 3,
+          "evidence_hits": 0,
+          "selected_chunks": 0,
+          "empty_contexts": 3
+        },
+        "out_of_corpus": {
+          "questions": 3,
+          "evidence_hits": null,
+          "selected_chunks": 0,
+          "empty_contexts": 3
+        }
+      }
+    },
+    {
+      "threshold": 0.6,
+      "groups": {
+        "benchmark": {
+          "questions": 10,
+          "evidence_hits": 1,
+          "selected_chunks": 7,
+          "empty_contexts": 7
+        },
+        "paraphrase": {
+          "questions": 3,
+          "evidence_hits": 0,
+          "selected_chunks": 0,
+          "empty_contexts": 3
+        },
+        "out_of_corpus": {
+          "questions": 3,
+          "evidence_hits": null,
+          "selected_chunks": 0,
+          "empty_contexts": 3
+        }
+      }
+    }
+  ],
+  "questions": [
+    {
+      "question_number": 1,
+      "question": "Сохранит ли агент сведения в постоянную память, если написать ему запомни?",
+      "group": "benchmark",
+      "evidence": [
+        {
+          "source": "docs/MEMORY.md",
+          "quote": "Просьба «запомни» в обычном чате также не вызывает запись"
+        }
+      ],
+      "candidates": [
+        {
+          "chunk_id": "4f0168f649070be9ceeca7579cf5739088bee37b3de979b800cb65f3115dc22c",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.6017561287303632,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "59dc12df97ce6442f6a4cde5baa800a679d33c5330bc876e7f1faced2ff4432b",
+          "source": "docs/MEMORY.md",
+          "score": 0.5860613336381799,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "9c027a720b6781d89715fd457865a869b59c774cd3b5b463fc4314449dfd6902",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.5795638033477869,
+          "original_rank": 3,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "326eb41b127789bc16874883fb5bb6340b5b44342669d7dc12400993dc26b3ab",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.5749085660272718,
+          "original_rank": 4,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.5699555308858331,
+          "original_rank": 5,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "source": "docs/LECTURE.md",
+          "score": 0.5688286853844742,
+          "original_rank": 6,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.5680185631740033,
+          "original_rank": 7,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.567560581941465,
+          "original_rank": 8,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9cc399ebdcffa79ab1eae4a52dba942e8d05cd23227611d3cf71294de10b390a",
+          "source": "docs/RAG.md",
+          "score": 0.5644822621616497,
+          "original_rank": 9,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9ca49dd87b08ba7dd0931f5409f2dd41ffa71dff66a944bd562f5c5bbb901de9",
+          "source": "docs/MEMORY.md",
+          "score": 0.5638186316067677,
+          "original_rank": 10,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "50f22cfeca9d67f47a0826e23119a6888b290547a43f3f648077ce95f229b9b4",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.5636382341229275,
+          "original_rank": 11,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "a3c4a1dda87c560fa1696dc710ce0a858a27d325d9e99ae7c79d7941064c16ca",
+          "source": "docs/LECTURE.md",
+          "score": 0.5623662504772663,
+          "original_rank": 12,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "105802ac368610250bd201797813fb41a54fdd7e060f5b71bbcb401fe186ea2b",
+          "source": "docs/INVARIANTS.md",
+          "score": 0.5605717033965438,
+          "original_rank": 13,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "39fa2ba856d9c4064cb1734e84465b48cc87baf1e09f8bd980f167eacaa7cc47",
+          "source": "docs/INDEXING.md",
+          "score": 0.556697953860799,
+          "original_rank": 14,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "e0dffde4115c2df658b99a97573b059542cdf0dc57bf2a58f1efcf2e19e5882d",
+          "source": "docs/LECTURE.md",
+          "score": 0.556401851754342,
+          "original_rank": 15,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "bebe4f7db0fe61d70f79cf0f75604fbe344ab186b66ef53b509638f5a6e234c4",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.5545289796265278,
+          "original_rank": 16,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "7a578f0c4a063ecccfd1bd0f6f11ed0739e4081e46e3eb5d72d508cc59c9be20",
+          "source": "docs/PERSONALIZATION.md",
+          "score": 0.5532158408320663,
+          "original_rank": 17,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.5531751659646669,
+          "original_rank": 18,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "f5127eddeac001fdd467ca341097cbdef2bccdcc498001697efc6c51fbe0bddd",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.5512405238754821,
+          "original_rank": 19,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "e6435b6933dba0409be2782000f606c08bc8a16fd52ad48c9172545b0a8f25d7",
+          "source": "docs/CHAT.md",
+          "score": 0.5461385385073797,
+          "original_rank": 20,
+          "selection_reason": "top_k"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "4f0168f649070be9ceeca7579cf5739088bee37b3de979b800cb65f3115dc22c",
+          "59dc12df97ce6442f6a4cde5baa800a679d33c5330bc876e7f1faced2ff4432b",
+          "9c027a720b6781d89715fd457865a869b59c774cd3b5b463fc4314449dfd6902",
+          "326eb41b127789bc16874883fb5bb6340b5b44342669d7dc12400993dc26b3ab",
+          "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/MEMORY.md",
+              "quote": "Просьба «запомни» в обычном чате также не вызывает запись",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "4f0168f649070be9ceeca7579cf5739088bee37b3de979b800cb65f3115dc22c",
+          "59dc12df97ce6442f6a4cde5baa800a679d33c5330bc876e7f1faced2ff4432b",
+          "9c027a720b6781d89715fd457865a869b59c774cd3b5b463fc4314449dfd6902",
+          "326eb41b127789bc16874883fb5bb6340b5b44342669d7dc12400993dc26b3ab",
+          "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/MEMORY.md",
+              "quote": "Просьба «запомни» в обычном чате также не вызывает запись",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": false,
+        "all_hit": false,
+        "evidence": [
+          {
+            "source": "docs/MEMORY.md",
+            "quote": "Просьба «запомни» в обычном чате также не вызывает запись",
+            "ranks": []
+          }
+        ]
+      }
+    },
+    {
+      "question_number": 2,
+      "question": "Что происходит с рабочей памятью при создании нового диалога?",
+      "group": "benchmark",
+      "evidence": [
+        {
+          "source": "docs/MEMORY.md",
+          "quote": "Новый диалог начинает с пустой рабочей памятью"
+        }
+      ],
+      "candidates": [
+        {
+          "chunk_id": "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "source": "docs/LECTURE.md",
+          "score": 0.5477418158964064,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.5020607606225712,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.48952319871782446,
+          "original_rank": 3,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "9434b7e72556fefeac0eca6f965eac14b54280e26305186945681244baab3c38",
+          "source": "docs/INVARIANTS.md",
+          "score": 0.48536798000694126,
+          "original_rank": 4,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "e0dffde4115c2df658b99a97573b059542cdf0dc57bf2a58f1efcf2e19e5882d",
+          "source": "docs/LECTURE.md",
+          "score": 0.48212394249943635,
+          "original_rank": 5,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.48051305506719383,
+          "original_rank": 6,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "d9c343b38ab76f1cd236af49bf6c0a5d7a995b385c8092ebf1b608a7e8cf3b91",
+          "source": "docs/LECTURE.md",
+          "score": 0.4799014553335232,
+          "original_rank": 7,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "source": "docs/LECTURE.md",
+          "score": 0.475937866457328,
+          "original_rank": 8,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "bfd220b365cfa4cdaa5c0ee010e53d38956c78c941de93fa3781d169e3464fc5",
+          "source": "docs/MEMORY.md",
+          "score": 0.47566982257686563,
+          "original_rank": 9,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6",
+          "source": "docs/CHAT.md",
+          "score": 0.4738699810798887,
+          "original_rank": 10,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "f9ed5dc955f603fab7a509d27c2d19f30b80b31c7ef65f183dfb2ba30a4cc799",
+          "source": "docs/MCP.md",
+          "score": 0.4697172940587348,
+          "original_rank": 11,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "4d002b0b5acee8beade5856aabf88b7b11f36417b8d29a238ad1a4d7cbf6e7f5",
+          "source": "docs/ORCHESTRATION.md",
+          "score": 0.46245717536883446,
+          "original_rank": 12,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "85fd12111c65a3902424ce58554bf897871e8b26eb58db852e1bd42af14e4277",
+          "source": "docs/MEMORY.md",
+          "score": 0.4622854065132912,
+          "original_rank": 13,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "07288713ba3cc10ce19df834882a593fea2192990214fc0aa4efd729a80ce0fc",
+          "source": "docs/LECTURE.md",
+          "score": 0.4559724966263258,
+          "original_rank": 14,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "46d1c23eefeaedcf4a92ef1681912db28a6ab976cb97af18b22e4a513d517ba6",
+          "source": "docs/CHAT.md",
+          "score": 0.45384048243403624,
+          "original_rank": 15,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "e6435b6933dba0409be2782000f606c08bc8a16fd52ad48c9172545b0a8f25d7",
+          "source": "docs/CHAT.md",
+          "score": 0.4518253189783016,
+          "original_rank": 16,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9fdcb8cf6ebe69fa5a994d62792f2375e57aaedb654d2789fd4378cce1f3f72c",
+          "source": "docs/MCP.md",
+          "score": 0.44988729284205414,
+          "original_rank": 17,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9656cb8ffd4b92d8a38b6eecf40fc984dbad014c56049d03a9707900ce5174e7",
+          "source": "docs/INDEXING.md",
+          "score": 0.4484666159991959,
+          "original_rank": 18,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.44775674480743965,
+          "original_rank": 19,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "c77facf4d6f6a96a0623fb8a40beaa4468f3c22821e070302f8059c8b8731221",
+          "source": "docs/RAG.md",
+          "score": 0.4471849864085915,
+          "original_rank": 20,
+          "selection_reason": "top_k"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "9434b7e72556fefeac0eca6f965eac14b54280e26305186945681244baab3c38",
+          "e0dffde4115c2df658b99a97573b059542cdf0dc57bf2a58f1efcf2e19e5882d"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/MEMORY.md",
+              "quote": "Новый диалог начинает с пустой рабочей памятью",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "9434b7e72556fefeac0eca6f965eac14b54280e26305186945681244baab3c38",
+          "e0dffde4115c2df658b99a97573b059542cdf0dc57bf2a58f1efcf2e19e5882d"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/MEMORY.md",
+              "quote": "Новый диалог начинает с пустой рабочей памятью",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": false,
+        "all_hit": false,
+        "evidence": [
+          {
+            "source": "docs/MEMORY.md",
+            "quote": "Новый диалог начинает с пустой рабочей памятью",
+            "ranks": []
+          }
+        ]
+      }
+    },
+    {
+      "question_number": 3,
+      "question": "Нужно ли запускать веб-сервер, чтобы CLI мог работать с памятью?",
+      "group": "benchmark",
+      "evidence": [
+        {
+          "source": "docs/MEMORY.md",
+          "quote": "Работающий веб-сервер для CLI не требуется"
+        }
+      ],
+      "candidates": [
+        {
+          "chunk_id": "9ca49dd87b08ba7dd0931f5409f2dd41ffa71dff66a944bd562f5c5bbb901de9",
+          "source": "docs/MEMORY.md",
+          "score": 0.6663982101207068,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "326eb41b127789bc16874883fb5bb6340b5b44342669d7dc12400993dc26b3ab",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.6355504630778404,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "e94690d50aa661a8516d56944fc7fbf222d5fa3e7dac0bc31cadc89a5ad92f27",
+          "source": "docs/MCP.md",
+          "score": 0.6340123361005138,
+          "original_rank": 3,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "bfd220b365cfa4cdaa5c0ee010e53d38956c78c941de93fa3781d169e3464fc5",
+          "source": "docs/MEMORY.md",
+          "score": 0.6317009158077053,
+          "original_rank": 4,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "7a578f0c4a063ecccfd1bd0f6f11ed0739e4081e46e3eb5d72d508cc59c9be20",
+          "source": "docs/PERSONALIZATION.md",
+          "score": 0.6307309864248581,
+          "original_rank": 5,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "969d9429f6bb4a06e93cb2204c771c2bea9658fdc62ff769be6f4433408d29c8",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.6260769904746595,
+          "original_rank": 6,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "4f0168f649070be9ceeca7579cf5739088bee37b3de979b800cb65f3115dc22c",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.6245116985386016,
+          "original_rank": 7,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "a3c4a1dda87c560fa1696dc710ce0a858a27d325d9e99ae7c79d7941064c16ca",
+          "source": "docs/LECTURE.md",
+          "score": 0.6228001639295313,
+          "original_rank": 8,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.6222507038711586,
+          "original_rank": 9,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "f5127eddeac001fdd467ca341097cbdef2bccdcc498001697efc6c51fbe0bddd",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.6204568820657251,
+          "original_rank": 10,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9656cb8ffd4b92d8a38b6eecf40fc984dbad014c56049d03a9707900ce5174e7",
+          "source": "docs/INDEXING.md",
+          "score": 0.61832358088654,
+          "original_rank": 11,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "source": "docs/LECTURE.md",
+          "score": 0.6159615584392356,
+          "original_rank": 12,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "84b425add09a47f4061b74bcf8bbd8391f14af355a1911c100e28edf36beb24e",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.6158911314999266,
+          "original_rank": 13,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "d86ea95be23a4d0ba5d004f721bbceb48fc0494e0216d88f46a868e9ff24f5e7",
+          "source": "docs/ORCHESTRATION.md",
+          "score": 0.6141993496028718,
+          "original_rank": 14,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "c5ae4dfed091476d71ef9fa04eab976eabe335b829966dbe466efbd92648e1c2",
+          "source": "docs/ORCHESTRATION.md",
+          "score": 0.6134396889445926,
+          "original_rank": 15,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "0e72aad6c114c9b073238cf56f318f580f7da102660603af127c334a94b5b17f",
+          "source": "docs/LECTURE.md",
+          "score": 0.6127813995217645,
+          "original_rank": 16,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "105802ac368610250bd201797813fb41a54fdd7e060f5b71bbcb401fe186ea2b",
+          "source": "docs/INVARIANTS.md",
+          "score": 0.6081091604462892,
+          "original_rank": 17,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.6077485794733417,
+          "original_rank": 18,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "d9c343b38ab76f1cd236af49bf6c0a5d7a995b385c8092ebf1b608a7e8cf3b91",
+          "source": "docs/LECTURE.md",
+          "score": 0.6066156802090018,
+          "original_rank": 19,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "009c36bda000d749a8a963c23dbcaf5880528e5fba0cde343ff852dc67683d0d",
+          "source": "docs/RAG.md",
+          "score": 0.6044362717212568,
+          "original_rank": 20,
+          "selection_reason": "top_k"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "9ca49dd87b08ba7dd0931f5409f2dd41ffa71dff66a944bd562f5c5bbb901de9",
+          "326eb41b127789bc16874883fb5bb6340b5b44342669d7dc12400993dc26b3ab",
+          "e94690d50aa661a8516d56944fc7fbf222d5fa3e7dac0bc31cadc89a5ad92f27",
+          "bfd220b365cfa4cdaa5c0ee010e53d38956c78c941de93fa3781d169e3464fc5",
+          "7a578f0c4a063ecccfd1bd0f6f11ed0739e4081e46e3eb5d72d508cc59c9be20"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": true,
+          "all_hit": true,
+          "evidence": [
+            {
+              "source": "docs/MEMORY.md",
+              "quote": "Работающий веб-сервер для CLI не требуется",
+              "ranks": [
+                1
+              ]
+            }
+          ]
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "9ca49dd87b08ba7dd0931f5409f2dd41ffa71dff66a944bd562f5c5bbb901de9",
+          "326eb41b127789bc16874883fb5bb6340b5b44342669d7dc12400993dc26b3ab",
+          "e94690d50aa661a8516d56944fc7fbf222d5fa3e7dac0bc31cadc89a5ad92f27",
+          "bfd220b365cfa4cdaa5c0ee010e53d38956c78c941de93fa3781d169e3464fc5",
+          "7a578f0c4a063ecccfd1bd0f6f11ed0739e4081e46e3eb5d72d508cc59c9be20"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": true,
+          "all_hit": true,
+          "evidence": [
+            {
+              "source": "docs/MEMORY.md",
+              "quote": "Работающий веб-сервер для CLI не требуется",
+              "ranks": [
+                1
+              ]
+            }
+          ]
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": true,
+        "all_hit": true,
+        "evidence": [
+          {
+            "source": "docs/MEMORY.md",
+            "quote": "Работающий веб-сервер для CLI не требуется",
+            "ranks": [
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "question_number": 4,
+      "question": "Как отключить персонализацию в браузере?",
+      "group": "benchmark",
+      "evidence": [
+        {
+          "source": "docs/PERSONALIZATION.md",
+          "quote": "Для отключения персонализации очистите поле выбора профиля"
+        }
+      ],
+      "candidates": [
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.4327692819134521,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.38274227045018494,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.3681487036001651,
+          "original_rank": 3,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "59dc12df97ce6442f6a4cde5baa800a679d33c5330bc876e7f1faced2ff4432b",
+          "source": "docs/MEMORY.md",
+          "score": 0.36118436252137387,
+          "original_rank": 4,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "8e90000a9575698329633fd40c9496ed74644ae5668def6d9c0aa699919e22c6",
+          "source": "docs/PERSONALIZATION.md",
+          "score": 0.3606999572479184,
+          "original_rank": 5,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "c3d4d11fd25d332e752cea0a04e65f34067f5ae4a2ca31be9f4cf031f1514dac",
+          "source": "docs/LECTURE.md",
+          "score": 0.3601314158388488,
+          "original_rank": 6,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.35726691010626915,
+          "original_rank": 7,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "source": "docs/LECTURE.md",
+          "score": 0.3516524613425145,
+          "original_rank": 8,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "fb66029ef779b11e72813cd7cb394d8ee5b5bde9d67de95c32a27431ff50ab2a",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.3516052912337143,
+          "original_rank": 9,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "source": "docs/LECTURE.md",
+          "score": 0.35101905180804216,
+          "original_rank": 10,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "1c302bcbe1e8faf3ee827649b82d59240e70e6e2d6e8109cad9e94f8d381594e",
+          "source": "docs/CHAT.md",
+          "score": 0.3498440505649008,
+          "original_rank": 11,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "d49787f4277b5aedb713efac8ecdec29528d78969f31b7ae981d203798c8c2b6",
+          "source": "docs/MCP.md",
+          "score": 0.3446481326909522,
+          "original_rank": 12,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6",
+          "source": "docs/CHAT.md",
+          "score": 0.3433228632666352,
+          "original_rank": 13,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "bebe4f7db0fe61d70f79cf0f75604fbe344ab186b66ef53b509638f5a6e234c4",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.3413943701048878,
+          "original_rank": 14,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "c5bacb161ff67e1e57a837212d466167f79fa228353555fd727d2d0909598962",
+          "source": "docs/INDEXING.md",
+          "score": 0.3382936382341837,
+          "original_rank": 15,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "9fdcb8cf6ebe69fa5a994d62792f2375e57aaedb654d2789fd4378cce1f3f72c",
+          "source": "docs/MCP.md",
+          "score": 0.3381874960824355,
+          "original_rank": 16,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "111c3165c88309315cfb39a0362f3a8d5ddb33bc18eab15c0a03b1876b54c1e8",
+          "source": "docs/CHAT.md",
+          "score": 0.3357756079682184,
+          "original_rank": 17,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "e6239b5e774406f7811779bbade9aec144e781d490f83a29306ee3ec473c9464",
+          "source": "docs/INVARIANTS.md",
+          "score": 0.3345346726744227,
+          "original_rank": 18,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "969d9429f6bb4a06e93cb2204c771c2bea9658fdc62ff769be6f4433408d29c8",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.3345211054297195,
+          "original_rank": 19,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "4c891e9b606a4c55f22a19fc40a90df5a6a5c2a7328225f494996dc5168d419f",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.3322997956796713,
+          "original_rank": 20,
+          "selection_reason": "below_threshold"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "59dc12df97ce6442f6a4cde5baa800a679d33c5330bc876e7f1faced2ff4432b",
+          "8e90000a9575698329633fd40c9496ed74644ae5668def6d9c0aa699919e22c6"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": true,
+          "all_hit": true,
+          "evidence": [
+            {
+              "source": "docs/PERSONALIZATION.md",
+              "quote": "Для отключения персонализации очистите поле выбора профиля",
+              "ranks": [
+                5
+              ]
+            }
+          ]
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "59dc12df97ce6442f6a4cde5baa800a679d33c5330bc876e7f1faced2ff4432b",
+          "8e90000a9575698329633fd40c9496ed74644ae5668def6d9c0aa699919e22c6"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 10,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": true,
+          "all_hit": true,
+          "evidence": [
+            {
+              "source": "docs/PERSONALIZATION.md",
+              "quote": "Для отключения персонализации очистите поле выбора профиля",
+              "ranks": [
+                5
+              ]
+            }
+          ]
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": true,
+        "all_hit": true,
+        "evidence": [
+          {
+            "source": "docs/PERSONALIZATION.md",
+            "quote": "Для отключения персонализации очистите поле выбора профиля",
+            "ranks": [
+              5
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "question_number": 5,
+      "question": "Что будет с диалогами при удалении профиля пользователя?",
+      "group": "benchmark",
+      "evidence": [
+        {
+          "source": "docs/PERSONALIZATION.md",
+          "quote": "Удаление профиля снимает его выбор во всех диалогах"
+        }
+      ],
+      "candidates": [
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.5442128095447296,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "source": "docs/LECTURE.md",
+          "score": 0.5274883571947964,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6",
+          "source": "docs/CHAT.md",
+          "score": 0.4872749801153802,
+          "original_rank": 3,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "8e90000a9575698329633fd40c9496ed74644ae5668def6d9c0aa699919e22c6",
+          "source": "docs/PERSONALIZATION.md",
+          "score": 0.48649153512231086,
+          "original_rank": 4,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.48324042613903917,
+          "original_rank": 5,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "source": "docs/LECTURE.md",
+          "score": 0.4812187853820169,
+          "original_rank": 6,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "46d1c23eefeaedcf4a92ef1681912db28a6ab976cb97af18b22e4a513d517ba6",
+          "source": "docs/CHAT.md",
+          "score": 0.4769815535180528,
+          "original_rank": 7,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.4761969412008349,
+          "original_rank": 8,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9434b7e72556fefeac0eca6f965eac14b54280e26305186945681244baab3c38",
+          "source": "docs/INVARIANTS.md",
+          "score": 0.4682655720896795,
+          "original_rank": 9,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "bab41069e7d1777404ba6d39edfc476b2edf0134b04b532bfd37f1ee0be43598",
+          "source": "docs/CHAT.md",
+          "score": 0.4679768766741275,
+          "original_rank": 10,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "e0dffde4115c2df658b99a97573b059542cdf0dc57bf2a58f1efcf2e19e5882d",
+          "source": "docs/LECTURE.md",
+          "score": 0.4657415554753081,
+          "original_rank": 11,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "59dc12df97ce6442f6a4cde5baa800a679d33c5330bc876e7f1faced2ff4432b",
+          "source": "docs/MEMORY.md",
+          "score": 0.458478706040407,
+          "original_rank": 12,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.45799861822796156,
+          "original_rank": 13,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9ba3bc48da056d122bb86a86d99babb4d84884512fb759f4466f298277fe19af",
+          "source": "docs/CHAT.md",
+          "score": 0.4528099239091651,
+          "original_rank": 14,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "969d9429f6bb4a06e93cb2204c771c2bea9658fdc62ff769be6f4433408d29c8",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.45131601175809294,
+          "original_rank": 15,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "7f1b45f191493506d9be374fa0bae006d47a3fa4c145b214f3092307db6aca6f",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.448480697514343,
+          "original_rank": 16,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9cc399ebdcffa79ab1eae4a52dba942e8d05cd23227611d3cf71294de10b390a",
+          "source": "docs/RAG.md",
+          "score": 0.448302898769999,
+          "original_rank": 17,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "85fd12111c65a3902424ce58554bf897871e8b26eb58db852e1bd42af14e4277",
+          "source": "docs/MEMORY.md",
+          "score": 0.44788836763714535,
+          "original_rank": 18,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "058c03ba712286801b572c3d49446527fab740d58bfbbbb1d09018c2460abf11",
+          "source": "docs/PERSONALIZATION.md",
+          "score": 0.4476328583322131,
+          "original_rank": 19,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "0e72aad6c114c9b073238cf56f318f580f7da102660603af127c334a94b5b17f",
+          "source": "docs/LECTURE.md",
+          "score": 0.4462768643769703,
+          "original_rank": 20,
+          "selection_reason": "top_k"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6",
+          "8e90000a9575698329633fd40c9496ed74644ae5668def6d9c0aa699919e22c6",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": true,
+          "all_hit": true,
+          "evidence": [
+            {
+              "source": "docs/PERSONALIZATION.md",
+              "quote": "Удаление профиля снимает его выбор во всех диалогах",
+              "ranks": [
+                4
+              ]
+            }
+          ]
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6",
+          "8e90000a9575698329633fd40c9496ed74644ae5668def6d9c0aa699919e22c6",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": true,
+          "all_hit": true,
+          "evidence": [
+            {
+              "source": "docs/PERSONALIZATION.md",
+              "quote": "Удаление профиля снимает его выбор во всех диалогах",
+              "ranks": [
+                4
+              ]
+            }
+          ]
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": true,
+        "all_hit": true,
+        "evidence": [
+          {
+            "source": "docs/PERSONALIZATION.md",
+            "quote": "Удаление профиля снимает его выбор во всех диалогах",
+            "ranks": [
+              4
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "question_number": 6,
+      "question": "Может ли модель напрямую назначить произвольный этап задачи?",
+      "group": "benchmark",
+      "evidence": [
+        {
+          "source": "docs/TASK_STATE.md",
+          "quote": "В ответе нельзя назначить произвольные `stage` или `step`"
+        }
+      ],
+      "candidates": [
+        {
+          "chunk_id": "bfd220b365cfa4cdaa5c0ee010e53d38956c78c941de93fa3781d169e3464fc5",
+          "source": "docs/MEMORY.md",
+          "score": 0.5143229996628811,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "d23c5b89b5c132f541d3d9e323048e81fe71dd2a5e1fa6ee375944d9466dae49",
+          "source": "docs/LECTURE.md",
+          "score": 0.506166273559011,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "07288713ba3cc10ce19df834882a593fea2192990214fc0aa4efd729a80ce0fc",
+          "source": "docs/LECTURE.md",
+          "score": 0.5003985449522653,
+          "original_rank": 3,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.4910573942653156,
+          "original_rank": 4,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.4867338243781618,
+          "original_rank": 5,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.4821930129985103,
+          "original_rank": 6,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "e6435b6933dba0409be2782000f606c08bc8a16fd52ad48c9172545b0a8f25d7",
+          "source": "docs/CHAT.md",
+          "score": 0.48105130341078756,
+          "original_rank": 7,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "e0dffde4115c2df658b99a97573b059542cdf0dc57bf2a58f1efcf2e19e5882d",
+          "source": "docs/LECTURE.md",
+          "score": 0.47853859092533935,
+          "original_rank": 8,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "e94690d50aa661a8516d56944fc7fbf222d5fa3e7dac0bc31cadc89a5ad92f27",
+          "source": "docs/MCP.md",
+          "score": 0.4694419993195878,
+          "original_rank": 9,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "df02fb4b6aa99c52cb6e55bdb7888a0538c379864b09c96677020909a87c0a29",
+          "source": "docs/LECTURE.md",
+          "score": 0.46941552972943584,
+          "original_rank": 10,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "85fd12111c65a3902424ce58554bf897871e8b26eb58db852e1bd42af14e4277",
+          "source": "docs/MEMORY.md",
+          "score": 0.46726454846917437,
+          "original_rank": 11,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "source": "docs/LECTURE.md",
+          "score": 0.4660448657245172,
+          "original_rank": 12,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "2ce5ddaefab00d7c3fe4beaac292a75384c9de76816b7337dea83da80018685d",
+          "source": "docs/INVARIANTS.md",
+          "score": 0.4635723031878408,
+          "original_rank": 13,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "bebe4f7db0fe61d70f79cf0f75604fbe344ab186b66ef53b509638f5a6e234c4",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.4627650363046186,
+          "original_rank": 14,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "8949ad20ab271a8fe83fcca6a1c13dc42e226ecfce2f6c6143bd57d707fac1b8",
+          "source": "docs/LECTURE.md",
+          "score": 0.4601209198536742,
+          "original_rank": 15,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "39fa2ba856d9c4064cb1734e84465b48cc87baf1e09f8bd980f167eacaa7cc47",
+          "source": "docs/INDEXING.md",
+          "score": 0.4594666663786274,
+          "original_rank": 16,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "source": "docs/LECTURE.md",
+          "score": 0.45739575905421115,
+          "original_rank": 17,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6",
+          "source": "docs/CHAT.md",
+          "score": 0.4523328816818539,
+          "original_rank": 18,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "1c302bcbe1e8faf3ee827649b82d59240e70e6e2d6e8109cad9e94f8d381594e",
+          "source": "docs/CHAT.md",
+          "score": 0.45221107820424955,
+          "original_rank": 19,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "d9c343b38ab76f1cd236af49bf6c0a5d7a995b385c8092ebf1b608a7e8cf3b91",
+          "source": "docs/LECTURE.md",
+          "score": 0.4518260534666181,
+          "original_rank": 20,
+          "selection_reason": "top_k"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "bfd220b365cfa4cdaa5c0ee010e53d38956c78c941de93fa3781d169e3464fc5",
+          "d23c5b89b5c132f541d3d9e323048e81fe71dd2a5e1fa6ee375944d9466dae49",
+          "07288713ba3cc10ce19df834882a593fea2192990214fc0aa4efd729a80ce0fc",
+          "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/TASK_STATE.md",
+              "quote": "В ответе нельзя назначить произвольные `stage` или `step`",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "bfd220b365cfa4cdaa5c0ee010e53d38956c78c941de93fa3781d169e3464fc5",
+          "d23c5b89b5c132f541d3d9e323048e81fe71dd2a5e1fa6ee375944d9466dae49",
+          "07288713ba3cc10ce19df834882a593fea2192990214fc0aa4efd729a80ce0fc",
+          "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/TASK_STATE.md",
+              "quote": "В ответе нельзя назначить произвольные `stage` или `step`",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": false,
+        "all_hit": false,
+        "evidence": [
+          {
+            "source": "docs/TASK_STATE.md",
+            "quote": "В ответе нельзя назначить произвольные `stage` или `step`",
+            "ranks": []
+          }
+        ]
+      }
+    },
+    {
+      "question_number": 7,
+      "question": "Какой флаг включает режим задачи из командной строки?",
+      "group": "benchmark",
+      "evidence": [
+        {
+          "source": "docs/TASK_STATE.md",
+          "quote": "Режим включается явно командой `--task-start`"
+        }
+      ],
+      "candidates": [
+        {
+          "chunk_id": "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.5173430687543413,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.5126819948799447,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.5055613942325878,
+          "original_rank": 3,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "bfd220b365cfa4cdaa5c0ee010e53d38956c78c941de93fa3781d169e3464fc5",
+          "source": "docs/MEMORY.md",
+          "score": 0.505009333684121,
+          "original_rank": 4,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.5038687014252452,
+          "original_rank": 5,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "59dc12df97ce6442f6a4cde5baa800a679d33c5330bc876e7f1faced2ff4432b",
+          "source": "docs/MEMORY.md",
+          "score": 0.5017600252530703,
+          "original_rank": 6,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "e94690d50aa661a8516d56944fc7fbf222d5fa3e7dac0bc31cadc89a5ad92f27",
+          "source": "docs/MCP.md",
+          "score": 0.4958984248898687,
+          "original_rank": 7,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "bebe4f7db0fe61d70f79cf0f75604fbe344ab186b66ef53b509638f5a6e234c4",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.49554161087037857,
+          "original_rank": 8,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "d23c5b89b5c132f541d3d9e323048e81fe71dd2a5e1fa6ee375944d9466dae49",
+          "source": "docs/LECTURE.md",
+          "score": 0.4946520529112259,
+          "original_rank": 9,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "c5ae4dfed091476d71ef9fa04eab976eabe335b829966dbe466efbd92648e1c2",
+          "source": "docs/ORCHESTRATION.md",
+          "score": 0.4858466788854857,
+          "original_rank": 10,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "326eb41b127789bc16874883fb5bb6340b5b44342669d7dc12400993dc26b3ab",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.48531812866750096,
+          "original_rank": 11,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9cc399ebdcffa79ab1eae4a52dba942e8d05cd23227611d3cf71294de10b390a",
+          "source": "docs/RAG.md",
+          "score": 0.48243659234220915,
+          "original_rank": 12,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "d52fd2de8404b9f2045f6bf74b4b9406a7dc725b1f8362be6c18f00a4cf1eb35",
+          "source": "docs/ORCHESTRATION.md",
+          "score": 0.48196210728586564,
+          "original_rank": 13,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "4f0168f649070be9ceeca7579cf5739088bee37b3de979b800cb65f3115dc22c",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.48132926777950796,
+          "original_rank": 14,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "a3c4a1dda87c560fa1696dc710ce0a858a27d325d9e99ae7c79d7941064c16ca",
+          "source": "docs/LECTURE.md",
+          "score": 0.4757715134130471,
+          "original_rank": 15,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "f9ed5dc955f603fab7a509d27c2d19f30b80b31c7ef65f183dfb2ba30a4cc799",
+          "source": "docs/MCP.md",
+          "score": 0.4704596431652798,
+          "original_rank": 16,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "d86ea95be23a4d0ba5d004f721bbceb48fc0494e0216d88f46a868e9ff24f5e7",
+          "source": "docs/ORCHESTRATION.md",
+          "score": 0.4703594771006216,
+          "original_rank": 17,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "d9c343b38ab76f1cd236af49bf6c0a5d7a995b385c8092ebf1b608a7e8cf3b91",
+          "source": "docs/LECTURE.md",
+          "score": 0.4689068159549608,
+          "original_rank": 18,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "1c302bcbe1e8faf3ee827649b82d59240e70e6e2d6e8109cad9e94f8d381594e",
+          "source": "docs/CHAT.md",
+          "score": 0.46676963809702254,
+          "original_rank": 19,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9656cb8ffd4b92d8a38b6eecf40fc984dbad014c56049d03a9707900ce5174e7",
+          "source": "docs/INDEXING.md",
+          "score": 0.462444587022199,
+          "original_rank": 20,
+          "selection_reason": "top_k"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "bfd220b365cfa4cdaa5c0ee010e53d38956c78c941de93fa3781d169e3464fc5",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": true,
+          "all_hit": true,
+          "evidence": [
+            {
+              "source": "docs/TASK_STATE.md",
+              "quote": "Режим включается явно командой `--task-start`",
+              "ranks": [
+                1
+              ]
+            }
+          ]
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "bfd220b365cfa4cdaa5c0ee010e53d38956c78c941de93fa3781d169e3464fc5",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": true,
+          "all_hit": true,
+          "evidence": [
+            {
+              "source": "docs/TASK_STATE.md",
+              "quote": "Режим включается явно командой `--task-start`",
+              "ranks": [
+                1
+              ]
+            }
+          ]
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": true,
+        "all_hit": true,
+        "evidence": [
+          {
+            "source": "docs/TASK_STATE.md",
+            "quote": "Режим включается явно командой `--task-start`",
+            "ranks": [
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "question_number": 8,
+      "question": "Теряются ли сохранённые наблюдения при ошибке итогового ответа?",
+      "group": "benchmark",
+      "evidence": [
+        {
+          "source": "docs/SCHEDULING.md",
+          "quote": "Ошибка генерации итогового ответа не удаляет уже сохранённые наблюдения"
+        }
+      ],
+      "candidates": [
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.5321348793328424,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "source": "docs/LECTURE.md",
+          "score": 0.5136470358960887,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "07288713ba3cc10ce19df834882a593fea2192990214fc0aa4efd729a80ce0fc",
+          "source": "docs/LECTURE.md",
+          "score": 0.5105539149949869,
+          "original_rank": 3,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.5028659603262452,
+          "original_rank": 4,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.5026730199361387,
+          "original_rank": 5,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "c77facf4d6f6a96a0623fb8a40beaa4468f3c22821e070302f8059c8b8731221",
+          "source": "docs/RAG.md",
+          "score": 0.49275920215843677,
+          "original_rank": 6,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "336716f050fbfc25d2983a33b1dcba8e34d8edc70b9d14f7aba33a82c5a8713b",
+          "source": "docs/INDEXING.md",
+          "score": 0.490723041742135,
+          "original_rank": 7,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "50f22cfeca9d67f47a0826e23119a6888b290547a43f3f648077ce95f229b9b4",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.4899289898178931,
+          "original_rank": 8,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "20bedd1357e9270696bfeaba859c4b180065090df1ba684b0a4b7e0be688a154",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.4859046630136839,
+          "original_rank": 9,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "4f0168f649070be9ceeca7579cf5739088bee37b3de979b800cb65f3115dc22c",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.48265019291663264,
+          "original_rank": 10,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9c027a720b6781d89715fd457865a869b59c774cd3b5b463fc4314449dfd6902",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.4779401106939388,
+          "original_rank": 11,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "source": "docs/LECTURE.md",
+          "score": 0.47443842007259185,
+          "original_rank": 12,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "e94690d50aa661a8516d56944fc7fbf222d5fa3e7dac0bc31cadc89a5ad92f27",
+          "source": "docs/MCP.md",
+          "score": 0.46203947601463524,
+          "original_rank": 13,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.4618972848455401,
+          "original_rank": 14,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "39fa2ba856d9c4064cb1734e84465b48cc87baf1e09f8bd980f167eacaa7cc47",
+          "source": "docs/INDEXING.md",
+          "score": 0.4607675809045573,
+          "original_rank": 15,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "e6239b5e774406f7811779bbade9aec144e781d490f83a29306ee3ec473c9464",
+          "source": "docs/INVARIANTS.md",
+          "score": 0.4587740334814568,
+          "original_rank": 16,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9cc399ebdcffa79ab1eae4a52dba942e8d05cd23227611d3cf71294de10b390a",
+          "source": "docs/RAG.md",
+          "score": 0.4584296578852233,
+          "original_rank": 17,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "bebe4f7db0fe61d70f79cf0f75604fbe344ab186b66ef53b509638f5a6e234c4",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.4577964243160683,
+          "original_rank": 18,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6",
+          "source": "docs/CHAT.md",
+          "score": 0.4576916819690238,
+          "original_rank": 19,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "009c36bda000d749a8a963c23dbcaf5880528e5fba0cde343ff852dc67683d0d",
+          "source": "docs/RAG.md",
+          "score": 0.4560966002551702,
+          "original_rank": 20,
+          "selection_reason": "top_k"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "07288713ba3cc10ce19df834882a593fea2192990214fc0aa4efd729a80ce0fc",
+          "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/SCHEDULING.md",
+              "quote": "Ошибка генерации итогового ответа не удаляет уже сохранённые наблюдения",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "07288713ba3cc10ce19df834882a593fea2192990214fc0aa4efd729a80ce0fc",
+          "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/SCHEDULING.md",
+              "quote": "Ошибка генерации итогового ответа не удаляет уже сохранённые наблюдения",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": false,
+        "all_hit": false,
+        "evidence": [
+          {
+            "source": "docs/SCHEDULING.md",
+            "quote": "Ошибка генерации итогового ответа не удаляет уже сохранённые наблюдения",
+            "ranks": []
+          }
+        ]
+      }
+    },
+    {
+      "question_number": 9,
+      "question": "Какой инструмент позволяет прочитать архив наблюдений локально?",
+      "group": "benchmark",
+      "evidence": [
+        {
+          "source": "docs/SCHEDULING.md",
+          "quote": "`local_read_observations` читает внешние вызовы инструментов текущего диалога"
+        }
+      ],
+      "candidates": [
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.4825122696765972,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "source": "docs/LECTURE.md",
+          "score": 0.4574310082253431,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "source": "docs/LECTURE.md",
+          "score": 0.4354005287777691,
+          "original_rank": 3,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.42098240253059394,
+          "original_rank": 4,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6",
+          "source": "docs/CHAT.md",
+          "score": 0.40598173345105215,
+          "original_rank": 5,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "d9c343b38ab76f1cd236af49bf6c0a5d7a995b385c8092ebf1b608a7e8cf3b91",
+          "source": "docs/LECTURE.md",
+          "score": 0.4048941577175468,
+          "original_rank": 6,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.4013993014758217,
+          "original_rank": 7,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "e0dffde4115c2df658b99a97573b059542cdf0dc57bf2a58f1efcf2e19e5882d",
+          "source": "docs/LECTURE.md",
+          "score": 0.4002436264903039,
+          "original_rank": 8,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "07288713ba3cc10ce19df834882a593fea2192990214fc0aa4efd729a80ce0fc",
+          "source": "docs/LECTURE.md",
+          "score": 0.3961531561017831,
+          "original_rank": 9,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "c3d4d11fd25d332e752cea0a04e65f34067f5ae4a2ca31be9f4cf031f1514dac",
+          "source": "docs/LECTURE.md",
+          "score": 0.3919562620811838,
+          "original_rank": 10,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9fdcb8cf6ebe69fa5a994d62792f2375e57aaedb654d2789fd4378cce1f3f72c",
+          "source": "docs/MCP.md",
+          "score": 0.39083554536416504,
+          "original_rank": 11,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "4f0168f649070be9ceeca7579cf5739088bee37b3de979b800cb65f3115dc22c",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.3886103074708737,
+          "original_rank": 12,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "59dc12df97ce6442f6a4cde5baa800a679d33c5330bc876e7f1faced2ff4432b",
+          "source": "docs/MEMORY.md",
+          "score": 0.38774151622859143,
+          "original_rank": 13,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "969d9429f6bb4a06e93cb2204c771c2bea9658fdc62ff769be6f4433408d29c8",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.3826239831991392,
+          "original_rank": 14,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "e6435b6933dba0409be2782000f606c08bc8a16fd52ad48c9172545b0a8f25d7",
+          "source": "docs/CHAT.md",
+          "score": 0.3820379128885254,
+          "original_rank": 15,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "111c3165c88309315cfb39a0362f3a8d5ddb33bc18eab15c0a03b1876b54c1e8",
+          "source": "docs/CHAT.md",
+          "score": 0.3797472970554737,
+          "original_rank": 16,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "f9ed5dc955f603fab7a509d27c2d19f30b80b31c7ef65f183dfb2ba30a4cc799",
+          "source": "docs/MCP.md",
+          "score": 0.37917694360984033,
+          "original_rank": 17,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "a3c4a1dda87c560fa1696dc710ce0a858a27d325d9e99ae7c79d7941064c16ca",
+          "source": "docs/LECTURE.md",
+          "score": 0.37844383275361115,
+          "original_rank": 18,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.37661345909823424,
+          "original_rank": 19,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9ba3bc48da056d122bb86a86d99babb4d84884512fb759f4466f298277fe19af",
+          "source": "docs/CHAT.md",
+          "score": 0.37578219616794317,
+          "original_rank": 20,
+          "selection_reason": "top_k"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/SCHEDULING.md",
+              "quote": "`local_read_observations` читает внешние вызовы инструментов текущего диалога",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/SCHEDULING.md",
+              "quote": "`local_read_observations` читает внешние вызовы инструментов текущего диалога",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": false,
+        "all_hit": false,
+        "evidence": [
+          {
+            "source": "docs/SCHEDULING.md",
+            "quote": "`local_read_observations` читает внешние вызовы инструментов текущего диалога",
+            "ranks": []
+          }
+        ]
+      }
+    },
+    {
+      "question_number": 10,
+      "question": "Можно ли восстановить из архива обрезанную часть ответа MCP?",
+      "group": "benchmark",
+      "evidence": [
+        {
+          "source": "docs/SCHEDULING.md",
+          "quote": "Отброшенная адаптером часть отсутствует и в JSON диалога"
+        }
+      ],
+      "candidates": [
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.6175427730342811,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "e94690d50aa661a8516d56944fc7fbf222d5fa3e7dac0bc31cadc89a5ad92f27",
+          "source": "docs/MCP.md",
+          "score": 0.5707654068192236,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.5702231780287793,
+          "original_rank": 3,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "c77facf4d6f6a96a0623fb8a40beaa4468f3c22821e070302f8059c8b8731221",
+          "source": "docs/RAG.md",
+          "score": 0.5615359471210798,
+          "original_rank": 4,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "50f22cfeca9d67f47a0826e23119a6888b290547a43f3f648077ce95f229b9b4",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.5614929018946837,
+          "original_rank": 5,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.5607679022464446,
+          "original_rank": 6,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "4f0168f649070be9ceeca7579cf5739088bee37b3de979b800cb65f3115dc22c",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.5579569063022027,
+          "original_rank": 7,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "source": "docs/LECTURE.md",
+          "score": 0.5573915694700046,
+          "original_rank": 8,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "2e3de8eab74a770ced0db0ac153827a48a713ee118c5cddce5232ac92b706f7e",
+          "source": "docs/MCP.md",
+          "score": 0.554962095423668,
+          "original_rank": 9,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "f5127eddeac001fdd467ca341097cbdef2bccdcc498001697efc6c51fbe0bddd",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.5497835263134647,
+          "original_rank": 10,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "e97fd45002950c5afbc2e6bbc92cb420d907040bf325ae13bf3650e9d728d3d7",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.5472403338919289,
+          "original_rank": 11,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "326eb41b127789bc16874883fb5bb6340b5b44342669d7dc12400993dc26b3ab",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.5443268258564793,
+          "original_rank": 12,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9fdcb8cf6ebe69fa5a994d62792f2375e57aaedb654d2789fd4378cce1f3f72c",
+          "source": "docs/MCP.md",
+          "score": 0.5438783010462946,
+          "original_rank": 13,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.5430484685191959,
+          "original_rank": 14,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9c027a720b6781d89715fd457865a869b59c774cd3b5b463fc4314449dfd6902",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.5427786784297043,
+          "original_rank": 15,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "c43017ce15a64051123ecf409408aee1fd2ee2c3e4d106fe14fdeaa65256f2a7",
+          "source": "docs/MCP.md",
+          "score": 0.5427503410737706,
+          "original_rank": 16,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "bebe4f7db0fe61d70f79cf0f75604fbe344ab186b66ef53b509638f5a6e234c4",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.5406245138337656,
+          "original_rank": 17,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "009c36bda000d749a8a963c23dbcaf5880528e5fba0cde343ff852dc67683d0d",
+          "source": "docs/RAG.md",
+          "score": 0.5396999480696509,
+          "original_rank": 18,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "source": "docs/LECTURE.md",
+          "score": 0.5389260771796134,
+          "original_rank": 19,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "969d9429f6bb4a06e93cb2204c771c2bea9658fdc62ff769be6f4433408d29c8",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.538767244384013,
+          "original_rank": 20,
+          "selection_reason": "top_k"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "e94690d50aa661a8516d56944fc7fbf222d5fa3e7dac0bc31cadc89a5ad92f27",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "c77facf4d6f6a96a0623fb8a40beaa4468f3c22821e070302f8059c8b8731221",
+          "50f22cfeca9d67f47a0826e23119a6888b290547a43f3f648077ce95f229b9b4"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/SCHEDULING.md",
+              "quote": "Отброшенная адаптером часть отсутствует и в JSON диалога",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "e94690d50aa661a8516d56944fc7fbf222d5fa3e7dac0bc31cadc89a5ad92f27",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "c77facf4d6f6a96a0623fb8a40beaa4468f3c22821e070302f8059c8b8731221",
+          "50f22cfeca9d67f47a0826e23119a6888b290547a43f3f648077ce95f229b9b4"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/SCHEDULING.md",
+              "quote": "Отброшенная адаптером часть отсутствует и в JSON диалога",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": false,
+        "all_hit": false,
+        "evidence": [
+          {
+            "source": "docs/SCHEDULING.md",
+            "quote": "Отброшенная адаптером часть отсутствует и в JSON диалога",
+            "ranks": []
+          }
+        ]
+      }
+    },
+    {
+      "question_number": 1,
+      "question": "Если попрошу запомнить, оно останется навсегда?",
+      "group": "paraphrase",
+      "evidence": [
+        {
+          "source": "docs/MEMORY.md",
+          "quote": "Просьба «запомни» в обычном чате также не вызывает запись"
+        }
+      ],
+      "candidates": [
+        {
+          "chunk_id": "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "source": "docs/LECTURE.md",
+          "score": 0.41991045764339907,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "bab41069e7d1777404ba6d39edfc476b2edf0134b04b532bfd37f1ee0be43598",
+          "source": "docs/CHAT.md",
+          "score": 0.41630829228641497,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "e0dffde4115c2df658b99a97573b059542cdf0dc57bf2a58f1efcf2e19e5882d",
+          "source": "docs/LECTURE.md",
+          "score": 0.4132926987321154,
+          "original_rank": 3,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.4089631039196866,
+          "original_rank": 4,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "e6435b6933dba0409be2782000f606c08bc8a16fd52ad48c9172545b0a8f25d7",
+          "source": "docs/CHAT.md",
+          "score": 0.4027780378145911,
+          "original_rank": 5,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "111c3165c88309315cfb39a0362f3a8d5ddb33bc18eab15c0a03b1876b54c1e8",
+          "source": "docs/CHAT.md",
+          "score": 0.40095296243457224,
+          "original_rank": 6,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "46d1c23eefeaedcf4a92ef1681912db28a6ab976cb97af18b22e4a513d517ba6",
+          "source": "docs/CHAT.md",
+          "score": 0.3980078052430642,
+          "original_rank": 7,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "07288713ba3cc10ce19df834882a593fea2192990214fc0aa4efd729a80ce0fc",
+          "source": "docs/LECTURE.md",
+          "score": 0.39265592785842207,
+          "original_rank": 8,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6",
+          "source": "docs/CHAT.md",
+          "score": 0.3863382095451273,
+          "original_rank": 9,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.38384122679032306,
+          "original_rank": 10,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "c140dc139c96681971805216123f13edfd5012c10ab4bdbc04bd2564cb2d0824",
+          "source": "docs/CHAT.md",
+          "score": 0.37339651671353813,
+          "original_rank": 11,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9cc399ebdcffa79ab1eae4a52dba942e8d05cd23227611d3cf71294de10b390a",
+          "source": "docs/RAG.md",
+          "score": 0.3673858803268879,
+          "original_rank": 12,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "4f0168f649070be9ceeca7579cf5739088bee37b3de979b800cb65f3115dc22c",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.36650989088015606,
+          "original_rank": 13,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "a3c4a1dda87c560fa1696dc710ce0a858a27d325d9e99ae7c79d7941064c16ca",
+          "source": "docs/LECTURE.md",
+          "score": 0.36573983232733215,
+          "original_rank": 14,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "c3d4d11fd25d332e752cea0a04e65f34067f5ae4a2ca31be9f4cf031f1514dac",
+          "source": "docs/LECTURE.md",
+          "score": 0.3628840807809214,
+          "original_rank": 15,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "0e72aad6c114c9b073238cf56f318f580f7da102660603af127c334a94b5b17f",
+          "source": "docs/LECTURE.md",
+          "score": 0.36279309810999383,
+          "original_rank": 16,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "9c027a720b6781d89715fd457865a869b59c774cd3b5b463fc4314449dfd6902",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.36240035570221,
+          "original_rank": 17,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "source": "docs/LECTURE.md",
+          "score": 0.3620844746525229,
+          "original_rank": 18,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.36073975699205113,
+          "original_rank": 19,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "cbb1a094ff3421022c62f40690091ab1bf217dc17f4ce8ef637a3aa2d8443326",
+          "source": "docs/TASKS.md",
+          "score": 0.3597975035524288,
+          "original_rank": 20,
+          "selection_reason": "top_k"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "bab41069e7d1777404ba6d39edfc476b2edf0134b04b532bfd37f1ee0be43598",
+          "e0dffde4115c2df658b99a97573b059542cdf0dc57bf2a58f1efcf2e19e5882d",
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "e6435b6933dba0409be2782000f606c08bc8a16fd52ad48c9172545b0a8f25d7"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/MEMORY.md",
+              "quote": "Просьба «запомни» в обычном чате также не вызывает запись",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "bab41069e7d1777404ba6d39edfc476b2edf0134b04b532bfd37f1ee0be43598",
+          "e0dffde4115c2df658b99a97573b059542cdf0dc57bf2a58f1efcf2e19e5882d",
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "e6435b6933dba0409be2782000f606c08bc8a16fd52ad48c9172545b0a8f25d7"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/MEMORY.md",
+              "quote": "Просьба «запомни» в обычном чате также не вызывает запись",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": false,
+        "all_hit": false,
+        "evidence": [
+          {
+            "source": "docs/MEMORY.md",
+            "quote": "Просьба «запомни» в обычном чате также не вызывает запись",
+            "ranks": []
+          }
+        ]
+      }
+    },
+    {
+      "question_number": 2,
+      "question": "Снесу профиль — чаты пропадут?",
+      "group": "paraphrase",
+      "evidence": [
+        {
+          "source": "docs/PERSONALIZATION.md",
+          "quote": "Удаление профиля снимает его выбор во всех диалогах"
+        }
+      ],
+      "candidates": [
+        {
+          "chunk_id": "111c3165c88309315cfb39a0362f3a8d5ddb33bc18eab15c0a03b1876b54c1e8",
+          "source": "docs/CHAT.md",
+          "score": 0.40264013986750313,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "fb66029ef779b11e72813cd7cb394d8ee5b5bde9d67de95c32a27431ff50ab2a",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.38478227210842925,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.37414416727505184,
+          "original_rank": 3,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "e6435b6933dba0409be2782000f606c08bc8a16fd52ad48c9172545b0a8f25d7",
+          "source": "docs/CHAT.md",
+          "score": 0.37180669555947243,
+          "original_rank": 4,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "source": "docs/LECTURE.md",
+          "score": 0.36987106426211963,
+          "original_rank": 5,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6",
+          "source": "docs/CHAT.md",
+          "score": 0.3649745108138649,
+          "original_rank": 6,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "8e90000a9575698329633fd40c9496ed74644ae5668def6d9c0aa699919e22c6",
+          "source": "docs/PERSONALIZATION.md",
+          "score": 0.36402697522081295,
+          "original_rank": 7,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "46d1c23eefeaedcf4a92ef1681912db28a6ab976cb97af18b22e4a513d517ba6",
+          "source": "docs/CHAT.md",
+          "score": 0.36339213922284297,
+          "original_rank": 8,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "39fa2ba856d9c4064cb1734e84465b48cc87baf1e09f8bd980f167eacaa7cc47",
+          "source": "docs/INDEXING.md",
+          "score": 0.3605224339787412,
+          "original_rank": 9,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "source": "docs/LECTURE.md",
+          "score": 0.35747935833429756,
+          "original_rank": 10,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "058c03ba712286801b572c3d49446527fab740d58bfbbbb1d09018c2460abf11",
+          "source": "docs/PERSONALIZATION.md",
+          "score": 0.3557845394513483,
+          "original_rank": 11,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.3547136876941015,
+          "original_rank": 12,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.3533850001576273,
+          "original_rank": 13,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "07288713ba3cc10ce19df834882a593fea2192990214fc0aa4efd729a80ce0fc",
+          "source": "docs/LECTURE.md",
+          "score": 0.35286535624778265,
+          "original_rank": 14,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "bab41069e7d1777404ba6d39edfc476b2edf0134b04b532bfd37f1ee0be43598",
+          "source": "docs/CHAT.md",
+          "score": 0.3477947041458061,
+          "original_rank": 15,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "e6239b5e774406f7811779bbade9aec144e781d490f83a29306ee3ec473c9464",
+          "source": "docs/INVARIANTS.md",
+          "score": 0.3467332128288608,
+          "original_rank": 16,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "c140dc139c96681971805216123f13edfd5012c10ab4bdbc04bd2564cb2d0824",
+          "source": "docs/CHAT.md",
+          "score": 0.34593998841687457,
+          "original_rank": 17,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "0e72aad6c114c9b073238cf56f318f580f7da102660603af127c334a94b5b17f",
+          "source": "docs/LECTURE.md",
+          "score": 0.3424676896255522,
+          "original_rank": 18,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "1c302bcbe1e8faf3ee827649b82d59240e70e6e2d6e8109cad9e94f8d381594e",
+          "source": "docs/CHAT.md",
+          "score": 0.34004519292334034,
+          "original_rank": 19,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "9ba3bc48da056d122bb86a86d99babb4d84884512fb759f4466f298277fe19af",
+          "source": "docs/CHAT.md",
+          "score": 0.33973657620488984,
+          "original_rank": 20,
+          "selection_reason": "below_threshold"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "111c3165c88309315cfb39a0362f3a8d5ddb33bc18eab15c0a03b1876b54c1e8",
+          "fb66029ef779b11e72813cd7cb394d8ee5b5bde9d67de95c32a27431ff50ab2a",
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "e6435b6933dba0409be2782000f606c08bc8a16fd52ad48c9172545b0a8f25d7",
+          "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/PERSONALIZATION.md",
+              "quote": "Удаление профиля снимает его выбор во всех диалогах",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "111c3165c88309315cfb39a0362f3a8d5ddb33bc18eab15c0a03b1876b54c1e8",
+          "fb66029ef779b11e72813cd7cb394d8ee5b5bde9d67de95c32a27431ff50ab2a",
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "e6435b6933dba0409be2782000f606c08bc8a16fd52ad48c9172545b0a8f25d7",
+          "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 14,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": false,
+          "all_hit": false,
+          "evidence": [
+            {
+              "source": "docs/PERSONALIZATION.md",
+              "quote": "Удаление профиля снимает его выбор во всех диалогах",
+              "ranks": []
+            }
+          ]
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": true,
+        "all_hit": true,
+        "evidence": [
+          {
+            "source": "docs/PERSONALIZATION.md",
+            "quote": "Удаление профиля снимает его выбор во всех диалогах",
+            "ranks": [
+              7
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "question_number": 3,
+      "question": "Запускать сервер обязательно, чтобы из консоли прочитать память?",
+      "group": "paraphrase",
+      "evidence": [
+        {
+          "source": "docs/MEMORY.md",
+          "quote": "Работающий веб-сервер для CLI не требуется"
+        }
+      ],
+      "candidates": [
+        {
+          "chunk_id": "9ca49dd87b08ba7dd0931f5409f2dd41ffa71dff66a944bd562f5c5bbb901de9",
+          "source": "docs/MEMORY.md",
+          "score": 0.5072628542489745,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "326eb41b127789bc16874883fb5bb6340b5b44342669d7dc12400993dc26b3ab",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.5042387861039708,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "be295d879f9c96b4fc3076567dfe3a2cd23fba10702a35e7172b2ee959b38534",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.4934103853721838,
+          "original_rank": 3,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "7a578f0c4a063ecccfd1bd0f6f11ed0739e4081e46e3eb5d72d508cc59c9be20",
+          "source": "docs/PERSONALIZATION.md",
+          "score": 0.49243989603616634,
+          "original_rank": 4,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "9cc399ebdcffa79ab1eae4a52dba942e8d05cd23227611d3cf71294de10b390a",
+          "source": "docs/RAG.md",
+          "score": 0.4834092127365094,
+          "original_rank": 5,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "bebe4f7db0fe61d70f79cf0f75604fbe344ab186b66ef53b509638f5a6e234c4",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.4753697742614402,
+          "original_rank": 6,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "59dc12df97ce6442f6a4cde5baa800a679d33c5330bc876e7f1faced2ff4432b",
+          "source": "docs/MEMORY.md",
+          "score": 0.4730649425362418,
+          "original_rank": 7,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "4f0168f649070be9ceeca7579cf5739088bee37b3de979b800cb65f3115dc22c",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.47260162274735296,
+          "original_rank": 8,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.4722128872022816,
+          "original_rank": 9,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "06c22ef140f18a1118d13107b8579dfc4d12fc359f5e248ee7c92d480223d4a8",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.47045388822089423,
+          "original_rank": 10,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "969d9429f6bb4a06e93cb2204c771c2bea9658fdc62ff769be6f4433408d29c8",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.4669890151998611,
+          "original_rank": 11,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.4668366866587488,
+          "original_rank": 12,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "1c302bcbe1e8faf3ee827649b82d59240e70e6e2d6e8109cad9e94f8d381594e",
+          "source": "docs/CHAT.md",
+          "score": 0.4661941798649991,
+          "original_rank": 13,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "e6435b6933dba0409be2782000f606c08bc8a16fd52ad48c9172545b0a8f25d7",
+          "source": "docs/CHAT.md",
+          "score": 0.4660640618746855,
+          "original_rank": 14,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "105802ac368610250bd201797813fb41a54fdd7e060f5b71bbcb401fe186ea2b",
+          "source": "docs/INVARIANTS.md",
+          "score": 0.4642785815857531,
+          "original_rank": 15,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "a3c4a1dda87c560fa1696dc710ce0a858a27d325d9e99ae7c79d7941064c16ca",
+          "source": "docs/LECTURE.md",
+          "score": 0.4637329729308355,
+          "original_rank": 16,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "4c891e9b606a4c55f22a19fc40a90df5a6a5c2a7328225f494996dc5168d419f",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.46318991761753425,
+          "original_rank": 17,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "d86ea95be23a4d0ba5d004f721bbceb48fc0494e0216d88f46a868e9ff24f5e7",
+          "source": "docs/ORCHESTRATION.md",
+          "score": 0.4629625529757585,
+          "original_rank": 18,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "336716f050fbfc25d2983a33b1dcba8e34d8edc70b9d14f7aba33a82c5a8713b",
+          "source": "docs/INDEXING.md",
+          "score": 0.46105429878474485,
+          "original_rank": 19,
+          "selection_reason": "top_k"
+        },
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.46094928298668125,
+          "original_rank": 20,
+          "selection_reason": "top_k"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "9ca49dd87b08ba7dd0931f5409f2dd41ffa71dff66a944bd562f5c5bbb901de9",
+          "326eb41b127789bc16874883fb5bb6340b5b44342669d7dc12400993dc26b3ab",
+          "be295d879f9c96b4fc3076567dfe3a2cd23fba10702a35e7172b2ee959b38534",
+          "7a578f0c4a063ecccfd1bd0f6f11ed0739e4081e46e3eb5d72d508cc59c9be20",
+          "9cc399ebdcffa79ab1eae4a52dba942e8d05cd23227611d3cf71294de10b390a"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": true,
+          "all_hit": true,
+          "evidence": [
+            {
+              "source": "docs/MEMORY.md",
+              "quote": "Работающий веб-сервер для CLI не требуется",
+              "ranks": [
+                1
+              ]
+            }
+          ]
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "9ca49dd87b08ba7dd0931f5409f2dd41ffa71dff66a944bd562f5c5bbb901de9",
+          "326eb41b127789bc16874883fb5bb6340b5b44342669d7dc12400993dc26b3ab",
+          "be295d879f9c96b4fc3076567dfe3a2cd23fba10702a35e7172b2ee959b38534",
+          "7a578f0c4a063ecccfd1bd0f6f11ed0739e4081e46e3eb5d72d508cc59c9be20",
+          "9cc399ebdcffa79ab1eae4a52dba942e8d05cd23227611d3cf71294de10b390a"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": true,
+          "all_hit": true,
+          "evidence": [
+            {
+              "source": "docs/MEMORY.md",
+              "quote": "Работающий веб-сервер для CLI не требуется",
+              "ranks": [
+                1
+              ]
+            }
+          ]
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": true,
+        "all_hit": true,
+        "evidence": [
+          {
+            "source": "docs/MEMORY.md",
+            "quote": "Работающий веб-сервер для CLI не требуется",
+            "ranks": [
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "question_number": 4,
+      "question": "Какая погода завтра в Екатеринбурге?",
+      "group": "out_of_corpus",
+      "evidence": [],
+      "candidates": [
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.32057791993100987,
+          "original_rank": 1,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "source": "docs/LECTURE.md",
+          "score": 0.3062070113112751,
+          "original_rank": 2,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "2e3de8eab74a770ced0db0ac153827a48a713ee118c5cddce5232ac92b706f7e",
+          "source": "docs/MCP.md",
+          "score": 0.2889889440113319,
+          "original_rank": 3,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "9434b7e72556fefeac0eca6f965eac14b54280e26305186945681244baab3c38",
+          "source": "docs/INVARIANTS.md",
+          "score": 0.2864396900965163,
+          "original_rank": 4,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "source": "docs/LECTURE.md",
+          "score": 0.28527476714270417,
+          "original_rank": 5,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "969d9429f6bb4a06e93cb2204c771c2bea9658fdc62ff769be6f4433408d29c8",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.2775873755288719,
+          "original_rank": 6,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.2772179015353721,
+          "original_rank": 7,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "d49787f4277b5aedb713efac8ecdec29528d78969f31b7ae981d203798c8c2b6",
+          "source": "docs/MCP.md",
+          "score": 0.2754647876348672,
+          "original_rank": 8,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "933d8c16accf59d315f39d092698c89b960a9981ac4c2e8a24cc31c12b76e8f1",
+          "source": "docs/LECTURE.md",
+          "score": 0.2705142970798387,
+          "original_rank": 9,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "9656cb8ffd4b92d8a38b6eecf40fc984dbad014c56049d03a9707900ce5174e7",
+          "source": "docs/INDEXING.md",
+          "score": 0.27010355137200914,
+          "original_rank": 10,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "9fdcb8cf6ebe69fa5a994d62792f2375e57aaedb654d2789fd4378cce1f3f72c",
+          "source": "docs/MCP.md",
+          "score": 0.2669413131113117,
+          "original_rank": 11,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "9ba3bc48da056d122bb86a86d99babb4d84884512fb759f4466f298277fe19af",
+          "source": "docs/CHAT.md",
+          "score": 0.2662499888128332,
+          "original_rank": 12,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "a3c4a1dda87c560fa1696dc710ce0a858a27d325d9e99ae7c79d7941064c16ca",
+          "source": "docs/LECTURE.md",
+          "score": 0.2654898462130978,
+          "original_rank": 13,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "c5ae4dfed091476d71ef9fa04eab976eabe335b829966dbe466efbd92648e1c2",
+          "source": "docs/ORCHESTRATION.md",
+          "score": 0.2636985545556844,
+          "original_rank": 14,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "d86ea95be23a4d0ba5d004f721bbceb48fc0494e0216d88f46a868e9ff24f5e7",
+          "source": "docs/ORCHESTRATION.md",
+          "score": 0.2636496771915529,
+          "original_rank": 15,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "d9c343b38ab76f1cd236af49bf6c0a5d7a995b385c8092ebf1b608a7e8cf3b91",
+          "source": "docs/LECTURE.md",
+          "score": 0.2614555456804455,
+          "original_rank": 16,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "ad811a0d55b7a29b5f75a0c15aa798277c12ac50966f27f104c11e62d528ba0b",
+          "source": "docs/SCHEDULING.md",
+          "score": 0.2599653431985531,
+          "original_rank": 17,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "f9ed5dc955f603fab7a509d27c2d19f30b80b31c7ef65f183dfb2ba30a4cc799",
+          "source": "docs/MCP.md",
+          "score": 0.2577919169185297,
+          "original_rank": 18,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "fb66029ef779b11e72813cd7cb394d8ee5b5bde9d67de95c32a27431ff50ab2a",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.25765471605205037,
+          "original_rank": 19,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "cbb1a094ff3421022c62f40690091ab1bf217dc17f4ce8ef637a3aa2d8443326",
+          "source": "docs/TASKS.md",
+          "score": 0.25752873011537164,
+          "original_rank": 20,
+          "selection_reason": "below_threshold"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "2e3de8eab74a770ced0db0ac153827a48a713ee118c5cddce5232ac92b706f7e",
+          "9434b7e72556fefeac0eca6f965eac14b54280e26305186945681244baab3c38",
+          "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": null,
+          "all_hit": null,
+          "evidence": []
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [],
+        "counts": {
+          "found": 20,
+          "passed": 0,
+          "selected": 0
+        },
+        "evidence": {
+          "any_hit": null,
+          "all_hit": null,
+          "evidence": []
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": null,
+        "all_hit": null,
+        "evidence": []
+      }
+    },
+    {
+      "question_number": 5,
+      "question": "Как испечь яблочный пирог в духовке?",
+      "group": "out_of_corpus",
+      "evidence": [],
+      "candidates": [
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.4128955807009741,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "source": "docs/LECTURE.md",
+          "score": 0.3669849770337167,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.36078248504682947,
+          "original_rank": 3,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "07288713ba3cc10ce19df834882a593fea2192990214fc0aa4efd729a80ce0fc",
+          "source": "docs/LECTURE.md",
+          "score": 0.34729055632060996,
+          "original_rank": 4,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6",
+          "source": "docs/CHAT.md",
+          "score": 0.33526474067888884,
+          "original_rank": 5,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "9ba3bc48da056d122bb86a86d99babb4d84884512fb759f4466f298277fe19af",
+          "source": "docs/CHAT.md",
+          "score": 0.33350965468680865,
+          "original_rank": 6,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "c77facf4d6f6a96a0623fb8a40beaa4468f3c22821e070302f8059c8b8731221",
+          "source": "docs/RAG.md",
+          "score": 0.3309271892668546,
+          "original_rank": 7,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "bab41069e7d1777404ba6d39edfc476b2edf0134b04b532bfd37f1ee0be43598",
+          "source": "docs/CHAT.md",
+          "score": 0.3275779152070605,
+          "original_rank": 8,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "46d1c23eefeaedcf4a92ef1681912db28a6ab976cb97af18b22e4a513d517ba6",
+          "source": "docs/CHAT.md",
+          "score": 0.3272185216717723,
+          "original_rank": 9,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.3243961559466763,
+          "original_rank": 10,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "e97fd45002950c5afbc2e6bbc92cb420d907040bf325ae13bf3650e9d728d3d7",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.31744155062264706,
+          "original_rank": 11,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "cbb1a094ff3421022c62f40690091ab1bf217dc17f4ce8ef637a3aa2d8443326",
+          "source": "docs/TASKS.md",
+          "score": 0.31687492349191815,
+          "original_rank": 12,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "source": "docs/LECTURE.md",
+          "score": 0.31572025713887925,
+          "original_rank": 13,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "111c3165c88309315cfb39a0362f3a8d5ddb33bc18eab15c0a03b1876b54c1e8",
+          "source": "docs/CHAT.md",
+          "score": 0.3058694898322847,
+          "original_rank": 14,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "e6435b6933dba0409be2782000f606c08bc8a16fd52ad48c9172545b0a8f25d7",
+          "source": "docs/CHAT.md",
+          "score": 0.30067390177702513,
+          "original_rank": 15,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "e0dffde4115c2df658b99a97573b059542cdf0dc57bf2a58f1efcf2e19e5882d",
+          "source": "docs/LECTURE.md",
+          "score": 0.3004717799248067,
+          "original_rank": 16,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "8459efe0664bee1e21cff10f43f6ea690879cf93b9e909fda762e420369c17da",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.29679231664744476,
+          "original_rank": 17,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "d49787f4277b5aedb713efac8ecdec29528d78969f31b7ae981d203798c8c2b6",
+          "source": "docs/MCP.md",
+          "score": 0.29583337640284446,
+          "original_rank": 18,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "c3d4d11fd25d332e752cea0a04e65f34067f5ae4a2ca31be9f4cf031f1514dac",
+          "source": "docs/LECTURE.md",
+          "score": 0.29287913564290335,
+          "original_rank": 19,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "9c027a720b6781d89715fd457865a869b59c774cd3b5b463fc4314449dfd6902",
+          "source": "docs/TASK_STATE.md",
+          "score": 0.2915454460598207,
+          "original_rank": 20,
+          "selection_reason": "below_threshold"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "07288713ba3cc10ce19df834882a593fea2192990214fc0aa4efd729a80ce0fc",
+          "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": null,
+          "all_hit": null,
+          "evidence": []
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 3,
+          "selected": 3
+        },
+        "evidence": {
+          "any_hit": null,
+          "all_hit": null,
+          "evidence": []
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": null,
+        "all_hit": null,
+        "evidence": []
+      }
+    },
+    {
+      "question_number": 6,
+      "question": "Сколько спутников у Юпитера?",
+      "group": "out_of_corpus",
+      "evidence": [],
+      "candidates": [
+        {
+          "chunk_id": "933d8c16accf59d315f39d092698c89b960a9981ac4c2e8a24cc31c12b76e8f1",
+          "source": "docs/LECTURE.md",
+          "score": 0.4053169945468276,
+          "original_rank": 1,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "98cd0cffd218c3be78649bc808d43271a177990643eca72043d361a43c1585a6",
+          "source": "docs/MCP.md",
+          "score": 0.3502149261719231,
+          "original_rank": 2,
+          "selection_reason": "selected"
+        },
+        {
+          "chunk_id": "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.32758315689874207,
+          "original_rank": 3,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "d23c5b89b5c132f541d3d9e323048e81fe71dd2a5e1fa6ee375944d9466dae49",
+          "source": "docs/LECTURE.md",
+          "score": 0.3239140196080884,
+          "original_rank": 4,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de",
+          "source": "docs/LECTURE.md",
+          "score": 0.3112881479402335,
+          "original_rank": 5,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "1eff91e4c45a18cea6d876756b3573660c000e199cd17768648bfc84973e4d95",
+          "source": "docs/LECTURE.md",
+          "score": 0.31074505312684236,
+          "original_rank": 6,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "fe95925f2e7cd37d57b99a2f4d8278f8a16f9466aa7115bbd48e309880f65ac6",
+          "source": "docs/CHAT.md",
+          "score": 0.3087216626911776,
+          "original_rank": 7,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "07288713ba3cc10ce19df834882a593fea2192990214fc0aa4efd729a80ce0fc",
+          "source": "docs/LECTURE.md",
+          "score": 0.3079885813231129,
+          "original_rank": 8,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "bab41069e7d1777404ba6d39edfc476b2edf0134b04b532bfd37f1ee0be43598",
+          "source": "docs/CHAT.md",
+          "score": 0.30646499852776304,
+          "original_rank": 9,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "e6435b6933dba0409be2782000f606c08bc8a16fd52ad48c9172545b0a8f25d7",
+          "source": "docs/CHAT.md",
+          "score": 0.3047547854440098,
+          "original_rank": 10,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "c737f3220dccabc21656cacb57b6edaa0a7d6c97a377ac1b7fff06bfa7f9333b",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.2929112516254788,
+          "original_rank": 11,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "e0dffde4115c2df658b99a97573b059542cdf0dc57bf2a58f1efcf2e19e5882d",
+          "source": "docs/LECTURE.md",
+          "score": 0.27726878615198136,
+          "original_rank": 12,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "9fdcb8cf6ebe69fa5a994d62792f2375e57aaedb654d2789fd4378cce1f3f72c",
+          "source": "docs/MCP.md",
+          "score": 0.27663867392117025,
+          "original_rank": 13,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "a3c4a1dda87c560fa1696dc710ce0a858a27d325d9e99ae7c79d7941064c16ca",
+          "source": "docs/LECTURE.md",
+          "score": 0.2757601335327387,
+          "original_rank": 14,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "c77facf4d6f6a96a0623fb8a40beaa4468f3c22821e070302f8059c8b8731221",
+          "source": "docs/RAG.md",
+          "score": 0.27526286189612037,
+          "original_rank": 15,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "e97fd45002950c5afbc2e6bbc92cb420d907040bf325ae13bf3650e9d728d3d7",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.27203981286440576,
+          "original_rank": 16,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "5af99d505c51478be61819d86bdbb226b7d4a21ac8f89ca1730ccd5c53e54c91",
+          "source": "docs/DAY22_PLAN.md",
+          "score": 0.27069464438793583,
+          "original_rank": 17,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "0f623f017bc15b292b66e7a3e1095eb53f15fa5b86bb1a61699096527b1a86ee",
+          "source": "docs/INDEXING.md",
+          "score": 0.26668799139752064,
+          "original_rank": 18,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "d7c2096d083c033f5e0f84f169f0ac8c58e4983df36cbd5d39d05adf76eb83bb",
+          "source": "docs/LECTURE.md",
+          "score": 0.26114014673767266,
+          "original_rank": 19,
+          "selection_reason": "below_threshold"
+        },
+        {
+          "chunk_id": "4c327f81fc934ac105254e5ea096afeb57c350818047dfbece0f4957c46425ff",
+          "source": "docs/PERSONALIZATION.md",
+          "score": 0.2587764872483751,
+          "original_rank": 20,
+          "selection_reason": "below_threshold"
+        }
+      ],
+      "baseline": {
+        "selected_chunk_ids": [
+          "933d8c16accf59d315f39d092698c89b960a9981ac4c2e8a24cc31c12b76e8f1",
+          "98cd0cffd218c3be78649bc808d43271a177990643eca72043d361a43c1585a6",
+          "696d0e5070e59ee0203e1c77da05e7677200907eabdd229f89c4abc5eff04108",
+          "d23c5b89b5c132f541d3d9e323048e81fe71dd2a5e1fa6ee375944d9466dae49",
+          "859493c39628c4045c860635ef5f001e3bfa7c72f0099fb80c892a4b80f8d7de"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 20,
+          "selected": 5
+        },
+        "evidence": {
+          "any_hit": null,
+          "all_hit": null,
+          "evidence": []
+        }
+      },
+      "filtered": {
+        "selected_chunk_ids": [
+          "933d8c16accf59d315f39d092698c89b960a9981ac4c2e8a24cc31c12b76e8f1",
+          "98cd0cffd218c3be78649bc808d43271a177990643eca72043d361a43c1585a6"
+        ],
+        "counts": {
+          "found": 20,
+          "passed": 2,
+          "selected": 2
+        },
+        "evidence": {
+          "any_hit": null,
+          "all_hit": null,
+          "evidence": []
+        }
+      },
+      "candidate_evidence": {
+        "any_hit": null,
+        "all_hit": null,
+        "evidence": []
+      }
+    }
+  ],
+  "network_probe": {
+    "created_at": "2026-10-03T17:43:51.071666+00:00",
+    "request_options": {
+      "meta_prompt": false,
+      "temperature": 0.0,
+      "max_tokens": 512,
+      "model": "deepseek-chat",
+      "stop_sequences": null,
+      "response_format": "text"
+    },
+    "status": "completed_with_errors",
+    "summary": {
+      "baseline": {
+        "runs": 1,
+        "answers_completed": 0,
+        "mode_answers_completed": 0,
+        "errors": 1,
+        "retrievals": 1,
+        "evaluated_retrievals": 1,
+        "rewrite_successes": 0,
+        "rewrite_fallbacks": 0,
+        "evidence_questions": 1,
+        "candidate_hits": 0,
+        "selected_hits": 0,
+        "empty_contexts": 0,
+        "mean_selected_chunks": 5.0,
+        "manual_scores_count": 0,
+        "manual_score_sum": null
+      },
+      "filtered": {
+        "runs": 1,
+        "answers_completed": 0,
+        "mode_answers_completed": 0,
+        "errors": 1,
+        "retrievals": 1,
+        "evaluated_retrievals": 1,
+        "rewrite_successes": 0,
+        "rewrite_fallbacks": 0,
+        "evidence_questions": 1,
+        "candidate_hits": 0,
+        "selected_hits": 0,
+        "empty_contexts": 0,
+        "mean_selected_chunks": 5.0,
+        "manual_scores_count": 0,
+        "manual_score_sum": null
+      },
+      "rewrite": {
+        "runs": 1,
+        "answers_completed": 0,
+        "mode_answers_completed": 0,
+        "errors": 1,
+        "retrievals": 1,
+        "evaluated_retrievals": 0,
+        "rewrite_successes": 0,
+        "rewrite_fallbacks": 1,
+        "evidence_questions": 0,
+        "candidate_hits": 0,
+        "selected_hits": 0,
+        "empty_contexts": 0,
+        "mean_selected_chunks": null,
+        "manual_scores_count": 0,
+        "manual_score_sum": null
+      },
+      "rewrite_filtered": {
+        "runs": 1,
+        "answers_completed": 0,
+        "mode_answers_completed": 0,
+        "errors": 1,
+        "retrievals": 1,
+        "evaluated_retrievals": 0,
+        "rewrite_successes": 0,
+        "rewrite_fallbacks": 1,
+        "evidence_questions": 0,
+        "candidate_hits": 0,
+        "selected_hits": 0,
+        "empty_contexts": 0,
+        "mean_selected_chunks": null,
+        "manual_scores_count": 0,
+        "manual_score_sum": null
+      }
+    },
+    "runs": [
+      {
+        "question": "Сохранит ли агент сведения в постоянную память, если написать ему запомни?",
+        "mode": "baseline",
+        "status": "error",
+        "error": "Не удалось подключиться к сервису модели. Проверьте соединение и повторите запрос.",
+        "answer": null,
+        "manual_score": null,
+        "rewrite": {
+          "status": "disabled",
+          "reason": null,
+          "elapsed_seconds": 0.0,
+          "usage": null
+        }
+      },
+      {
+        "question": "Сохранит ли агент сведения в постоянную память, если написать ему запомни?",
+        "mode": "filtered",
+        "status": "error",
+        "error": "Не удалось подключиться к сервису модели. Проверьте соединение и повторите запрос.",
+        "answer": null,
+        "manual_score": null,
+        "rewrite": {
+          "status": "disabled",
+          "reason": null,
+          "elapsed_seconds": 0.0,
+          "usage": null
+        }
+      },
+      {
+        "question": "Сохранит ли агент сведения в постоянную память, если написать ему запомни?",
+        "mode": "rewrite",
+        "status": "error",
+        "error": "Не удалось подключиться к сервису модели. Проверьте соединение и повторите запрос.",
+        "answer": null,
+        "manual_score": null,
+        "rewrite": {
+          "status": "fallback",
+          "reason": "Не удалось переписать запрос; использован исходный вопрос.",
+          "elapsed_seconds": 0.002317199992830865,
+          "usage": null
+        }
+      },
+      {
+        "question": "Сохранит ли агент сведения в постоянную память, если написать ему запомни?",
+        "mode": "rewrite_filtered",
+        "status": "error",
+        "error": "Не удалось подключиться к сервису модели. Проверьте соединение и повторите запрос.",
+        "answer": null,
+        "manual_score": null,
+        "rewrite": {
+          "status": "fallback",
+          "reason": "Не удалось переписать запрос; использован исходный вопрос.",
+          "elapsed_seconds": 0.026674399996409193,
+          "usage": null
+        }
+      }
+    ]
+  }
+}

@@ -12,6 +12,7 @@ from pathlib import Path
 from .agent import DEFAULT_MODEL
 from .cli import ENV_PATH, load_env
 from .indexing.store import load_index
+from .history import HistoryManager
 from .models import ContextSettings, RAGSettings, RequestOptions, utc_now
 from .rag import ROOT, Retriever
 from .service import ConversationService
@@ -65,6 +66,47 @@ def evidence_metrics(evidence: list[dict], chunks: list[dict]) -> dict:
     }
 
 
+def citation_metrics(answer: dict | None, context: dict | None) -> dict:
+    """Проверка доказательств не является оценкой смысла ответа."""
+    metrics = dict(sources_present=None, quotes_present=None,
+                   sources_match_context=None, quotes_match_chunks=None)
+    if not answer or answer.get("status") != "answered":
+        return metrics
+    sources, quotes = answer.get("sources", []), answer.get("quotes", [])
+    chunks = {chunk["chunk_id"]: chunk for chunk in (context or {}).get("chunks", [])}
+    metrics["sources_present"] = bool(sources)
+    metrics["quotes_present"] = bool(quotes)
+    metrics["sources_match_context"] = bool(sources) and all(
+        source.get("chunk_id") in chunks and all(
+            source.get(key) == chunks[source["chunk_id"]].get(key)
+            for key in ("source", "section")
+        ) for source in sources
+    )
+    source_ids = {source.get("chunk_id") for source in sources}
+    quote_ids = {quote.get("chunk_id") for quote in quotes}
+    metrics["quotes_match_chunks"] = bool(quotes) and source_ids == quote_ids and all(
+        quote.get("chunk_id") in chunks and bool(normalize(quote.get("text", "")))
+        and normalize(quote["text"]) in normalize(chunks[quote["chunk_id"]]["text"])
+        for quote in quotes
+    )
+    return metrics
+
+
+def dialogue_usage(data: object) -> dict:
+    """Расход всей изолированной попытки, включая непринятые ответы и repair."""
+    messages, _, _, archived = HistoryManager._decode_data(data)
+    totals = asdict(archived)
+    for message in messages:
+        if message["role"] != "assistant":
+            continue
+        if "usage" not in message:
+            totals["missing_responses"] += 1
+        else:
+            for key, value in message["usage"].items():
+                totals[key] += value
+    return totals
+
+
 def summarize(rows: list[dict]) -> dict:
     summary = {}
     for mode in dict.fromkeys(row["mode"] for row in rows):
@@ -73,6 +115,11 @@ def summarize(rows: list[dict]) -> dict:
         effective = [row for row in retrieved if not MODES[mode][0]
                      or row["rag_context"].get("rewrite", {}).get("status") == "success"]
         scored = [row for row in effective if row["manual_score"] is not None]
+        answered = [row for row in selected if row["status"] == "completed"
+                    and (row.get("rag_answer") or {}).get("status") == "answered"]
+        unknown = [row for row in selected if row["status"] == "completed"
+                   and (row.get("rag_answer") or {}).get("status") == "unknown"]
+        semantic = [row for row in answered if row.get("semantic_support") is not None]
         summary[mode] = {
             "runs": len(selected),
             "answers_completed": sum(row["status"] == "completed" for row in selected),
@@ -92,6 +139,19 @@ def summarize(rows: list[dict]) -> dict:
             ),
             "manual_scores_count": len(scored),
             "manual_score_sum": sum(row["manual_score"] for row in scored) if scored else None,
+            "substantive_answers": len(answered),
+            "unknown_answers": len(unknown),
+            "substantive_answer_rate": len(answered) / len(selected) if selected else None,
+            "citation_rates_among_substantive_answers": {
+                key: sum(row.get("citation_metrics", {}).get(key) is True for row in answered) / len(answered)
+                if answered else None
+                for key in ("sources_present", "quotes_present", "sources_match_context", "quotes_match_chunks")
+            },
+            "semantic_reviews": len(semantic),
+            "fully_supported_answers": sum(row["semantic_support"] == "full" for row in semantic) if semantic else None,
+            "refusal_reviews": sum(row.get("refusal_appropriate") is not None for row in unknown),
+            "appropriate_refusals": sum(row.get("refusal_appropriate") is True for row in unknown),
+            "unnecessary_refusals": sum(row.get("refusal_appropriate") is False for row in unknown),
         }
     return summary
 
@@ -149,6 +209,9 @@ def run_evaluation(
         "modes": modes, "rag_settings": asdict(parameters), "request_options": asdict(options),
         "system_prompt": "", "isolation": "Fresh dialogue per question/mode; temporary empty stores; no MCP, profile, invariants or task memory",
         "manual_score_scale": "0: incorrect, 1: partial, 2: correct and complete; null: not reviewed",
+        "semantic_support_scale": "full / partial / unsupported; null: not reviewed or not applicable. Review answer against quotes and their complete chunks, independently of literal matching.",
+        "refusal_appropriate_scale": "true / false; null: not reviewed or not applicable. Review available context and expected evidence.",
+        "usage_notes": "request_usage contains final-response callbacks only; dialogue_usage totals include archived rejected/repair responses. Query rewrite usage is separate in rag_context.rewrite. Missing API usage cannot be reconstructed.",
         "runs": [],
     }
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -176,7 +239,8 @@ def run_evaluation(
                         "group": question.get("group", "benchmark"),
                         "expected": question.get("expected"), "evidence": question["evidence"],
                         "manual_score": None, "unsupported_details": None, "review_notes": None,
-                        "answer": None, "error": None, "request_usage": [],
+                        "semantic_support": None, "refusal_appropriate": None, "rag_answer": None,
+                        "answer": None, "error": None, "request_usage": [], "dialogue_usage": None,
                     }
                     if retrieval_only:
                         context = retriever.retrieve(question["question"], settings)
@@ -197,7 +261,10 @@ def run_evaluation(
                         row.update(
                             conversation_id=conversation.id, status=turn.status, answer=turn.answer,
                             error=turn.error, rag_context=context, elapsed_seconds=turn.elapsed_seconds,
+                            rag_answer=turn.rag_answer,
+                            dialogue_usage=dialogue_usage(result.working_context),
                         )
+                    row["citation_metrics"] = citation_metrics(row["rag_answer"], context)
                     ensure_fixed_index(index_path, digest)
                     if context is not None:
                         if context["corpus_hash"] != metadata["corpus_hash"] or context["embedding"] != metadata["embedding"]:

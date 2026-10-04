@@ -6,11 +6,20 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from llm_agent.rag import select_candidates
-from llm_agent.rag_evaluation import evidence_metrics, load_questions, run_evaluation, summarize
+from llm_agent.rag_evaluation import citation_metrics, dialogue_usage, evidence_metrics, load_questions, run_evaluation, summarize
 from tests.helpers import completion
 
 
 class RAGEvaluationTests(unittest.TestCase):
+    @staticmethod
+    def grounded_completion():
+        response = completion()
+        response.choices[0].message.content = json.dumps({
+            "status": "answered", "answer": "Нужный отрывок", "sources": ["a"],
+            "quotes": [{"chunk_id": "a", "text": "Нужный отрывок"}], "clarification": None,
+        }, ensure_ascii=False)
+        return response
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -35,7 +44,7 @@ class RAGEvaluationTests(unittest.TestCase):
         self.addCleanup(retriever_patcher.stop)
 
     def retrieve(self, question, settings, *, rewrite=None):
-        chunks = [{"source": "doc.md", "text": "Нужный\nотрывок", "score": 0.4, "chunk_id": "a", "token_count": 3}]
+        chunks = [{"source": "doc.md", "section": "Раздел", "text": "Нужный\nотрывок", "score": 0.4, "chunk_id": "a", "token_count": 3}]
         selected, candidates, counts = select_candidates(chunks, settings)
         return dict(
             chunks=selected, candidates=candidates, counts=counts,
@@ -46,7 +55,7 @@ class RAGEvaluationTests(unittest.TestCase):
     def run_comparison(self, **kwargs):
         return run_evaluation(
             questions_path=self.questions, index_path=self.index, output=self.output,
-            threshold=0.5, modes=["baseline", "filtered"], **kwargs,
+            threshold=kwargs.pop("threshold", 0.5), modes=["baseline", "filtered"], **kwargs,
         )
 
     def test_evidence_uses_source_and_normalized_quote(self):
@@ -102,8 +111,8 @@ class RAGEvaluationTests(unittest.TestCase):
     def test_generation_uses_fresh_dialogues_and_never_sends_expected_answer(self):
         with patch("llm_agent.agent.OpenAI") as openai:
             generate = openai.return_value.chat.completions.create
-            generate.return_value = completion()
-            report = self.run_comparison(token="test")
+            generate.return_value = self.grounded_completion()
+            report = self.run_comparison(token="test", threshold=0.35)
         self.assertEqual(report["status"], "completed")
         self.assertEqual(len({row["conversation_id"] for row in report["runs"]}), 2)
         for call in generate.call_args_list:
@@ -113,6 +122,7 @@ class RAGEvaluationTests(unittest.TestCase):
             self.assertFalse(any(message["role"] == "assistant" for message in messages))
         self.assertEqual(len(generate.call_args_list), 2)
         self.assertTrue(all(row["request_usage"] for row in report["runs"]))
+        self.assertTrue(all(row["rag_answer"]["status"] == "answered" for row in report["runs"]))
         self.assertFalse(any(self.directory.glob("rag-evaluation-*")))
 
     def test_existing_report_is_never_overwritten(self):
@@ -144,7 +154,7 @@ class RAGEvaluationTests(unittest.TestCase):
 
     def test_completed_answer_after_fallback_marks_comparison_incomplete(self):
         with patch("llm_agent.agent.OpenAI") as openai, patch("llm_agent.service.rewrite_query") as rewrite:
-            openai.return_value.chat.completions.create.return_value = completion()
+            openai.return_value.chat.completions.create.return_value = self.grounded_completion()
             rewrite.return_value = {"query": "Вопрос", "status": "fallback"}
             report = run_evaluation(
                 questions_path=self.questions, index_path=self.index, output=self.output,
@@ -153,6 +163,46 @@ class RAGEvaluationTests(unittest.TestCase):
         self.assertEqual(report["status"], "completed_with_fallback")
         self.assertEqual(report["summary"]["rewrite_filtered"]["answers_completed"], 1)
         self.assertEqual(report["summary"]["rewrite_filtered"]["mode_answers_completed"], 0)
+
+    def test_citations_require_correct_metadata_and_their_own_chunk(self):
+        context = {"chunks": [
+            {"chunk_id": "a", "source": "doc.md", "section": "Раздел", "text": "Сервер не требуется."},
+            {"chunk_id": "b", "source": "other.md", "section": "Другой", "text": "Сервер требуется."},
+        ]}
+        answer = {"status": "answered", "sources": [{"chunk_id": "a", "source": "doc.md", "section": "Раздел"}],
+                  "quotes": [{"chunk_id": "a", "text": "Сервер\nне требуется."}]}
+        self.assertTrue(all(citation_metrics(answer, context).values()))
+        answer["sources"][0]["source"] = "invented.md"
+        self.assertFalse(citation_metrics(answer, context)["sources_match_context"])
+        answer["quotes"][0]["text"] = "Сервер требуется."
+        self.assertFalse(citation_metrics(answer, context)["quotes_match_chunks"])
+        for value in (None, {"status": "unknown"}):
+            self.assertTrue(all(metric is None for metric in citation_metrics(value, context).values()))
+
+    def test_citation_success_never_implicitly_counts_as_semantic_review(self):
+        report = self.run_comparison(retrieval_only=True)
+        row = report["runs"][0]
+        row.update(status="completed", rag_answer={"status": "answered"},
+                   citation_metrics=dict(sources_present=True, quotes_present=True,
+                                         sources_match_context=True, quotes_match_chunks=True))
+        result = summarize([row])["baseline"]
+        self.assertEqual(result["citation_rates_among_substantive_answers"]["quotes_match_chunks"], 1)
+        self.assertEqual(result["semantic_reviews"], 0)
+        self.assertIsNone(result["fully_supported_answers"])
+        row["semantic_support"] = "unsupported"
+        result = summarize([row])["baseline"]
+        self.assertEqual(result["semantic_reviews"], 1)
+        self.assertEqual(result["fully_supported_answers"], 0)
+
+    def test_usage_combines_archived_repairs_and_final_response(self):
+        data = {"messages": [{"role": "assistant", "content": "Финал",
+                              "usage": {"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14}}],
+                "summary": "", "archived_usage": {
+                    "prompt_tokens": 20, "completion_tokens": 6, "total_tokens": 26, "missing_responses": 0}}
+        self.assertEqual(dialogue_usage(data), {
+            "prompt_tokens": 30, "completion_tokens": 10, "total_tokens": 40, "missing_responses": 0})
+        del data["messages"][0]["usage"]
+        self.assertEqual(dialogue_usage(data)["missing_responses"], 1)
 
     def test_offline_rewrite_is_rejected_instead_of_faking_success(self):
         with self.assertRaisesRegex(ValueError, "Query rewrite требует LLM"):

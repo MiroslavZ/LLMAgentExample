@@ -9,7 +9,7 @@ import sys
 import time
 
 from .chunking import load_corpus
-from .embeddings import E5, RUBERT, Embedder
+from .embeddings import E5, Embedder, embedding_options
 from .pipeline import build, compare, corpus_stats, statistics_report
 from .store import load_index, search
 
@@ -31,7 +31,9 @@ def parser():
             cmd.add_argument("--cache-dir", type=Path)
             cmd.add_argument("--offline", action="store_true")
         if name == "build":
-            cmd.add_argument("--model", choices=(E5, RUBERT), default=E5)
+            cmd.add_argument("--model", default=E5, help="Hugging Face ID модели Sentence Transformers")
+            cmd.add_argument("--query-prefix", help="Префикс поискового запроса; по умолчанию из модели")
+            cmd.add_argument("--passage-prefix", help="Префикс документа; по умолчанию из модели")
             cmd.add_argument("--revision")
             cmd.add_argument("--size", type=int, default=350)
             cmd.add_argument("--overlap", type=int, default=50)
@@ -61,7 +63,9 @@ def run(args):
         documents = load_corpus(root, resolve(args.corpus))
         print("Загрузка embedding-модели...", file=sys.stderr)
         started = time.perf_counter()
-        model = Embedder(args.model, args.revision, args.cache_dir, args.offline)
+        prefixes = {key: getattr(args, key) for key in ("query_prefix", "passage_prefix")
+                    if getattr(args, key) is not None}
+        model = Embedder(args.model, args.revision, args.cache_dir, args.offline, **prefixes)
         result = {"model_load_seconds": time.perf_counter() - started, "indexes": {}}
         for strategy in strategies:
             print(f"Индексация: {strategy}", file=sys.stderr)
@@ -82,7 +86,8 @@ def run(args):
     if args.top_k < 1:
         raise ValueError("top-k должен быть положительным")
     settings = next(iter(indexes.values()))[0]["embedding"]
-    model = Embedder(settings["model"], settings["revision"], args.cache_dir, args.offline)
+    model = Embedder(settings["model"], settings["revision"], args.cache_dir, args.offline,
+                     **embedding_options(settings))
     if model.metadata != settings:
         raise ValueError("Модель/версии библиотек отличаются от сохранённого индекса; пересоберите индекс")
     if args.command == "search":

@@ -24,6 +24,15 @@ def retrieved(text="Уникальное содержимое базы"):
     }]}
 
 
+def grounded_completion(quote="содержимое"):
+    response = completion()
+    response.choices[0].message.content = json.dumps({
+        "status": "answered", "answer": "Ответ", "sources": ["chunk-1"],
+        "quotes": [{"chunk_id": "chunk-1", "text": quote}], "clarification": None,
+    }, ensure_ascii=False)
+    return response
+
+
 class ConversationRAGTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
@@ -33,7 +42,7 @@ class ConversationRAGTests(unittest.TestCase):
         self.openai = patcher.start()
         self.addCleanup(patcher.stop)
         self.complete = self.openai.return_value.chat.completions.create
-        self.complete.return_value = completion()
+        self.complete.return_value = grounded_completion()
         self.service = ConversationService(self.directory, "test-token")
         self.service.retriever = Mock()
         self.service.retriever.retrieve.return_value = retrieved()
@@ -59,7 +68,7 @@ class ConversationRAGTests(unittest.TestCase):
 
         def answer(**kwargs):
             saved_at_request.append(self.service.store.load(self.conversation.id))
-            return completion()
+            return grounded_completion()
 
         self.complete.side_effect = answer
         result = self.send()
@@ -72,7 +81,8 @@ class ConversationRAGTests(unittest.TestCase):
         self.assertEqual(json.loads(messages[-2]["content"].split("\n", 1)[1]), retrieved()["chunks"])
         self.assertEqual(saved_at_request[0].turns[-1].rag_context, retrieved())
         history = HistoryManager._decode_data(result.working_context)[0]
-        self.assertEqual([item["content"] for item in history], ["Вопрос", "Ответ"])
+        self.assertEqual([item["content"] for item in history], ["Вопрос", result.turns[-1].answer])
+        self.assertEqual(result.turns[-1].rag_answer["sources"][0]["source"], "notes.md")
         restored = ConversationService(self.directory, "test-token").get(result.id)
         self.assertEqual(restored, result)
         result.turns[-1].rag_context["chunks"].clear()
@@ -91,16 +101,17 @@ class ConversationRAGTests(unittest.TestCase):
 
     def test_each_question_uses_fresh_context_and_disable_removes_it(self):
         self.service.retriever.retrieve.side_effect = [retrieved("FIRST_ONLY"), retrieved("SECOND_ONLY")]
+        self.complete.side_effect = [grounded_completion("FIRST_ONLY"), grounded_completion("SECOND_ONLY"), completion()]
         self.send("Первый")
         second = self.send("Второй")
-        messages = json.dumps(self.complete.call_args.kwargs["messages"])
+        messages = self.complete.call_args.kwargs["messages"][-2]["content"]
         self.assertNotIn("FIRST_ONLY", messages)
         self.assertIn("SECOND_ONLY", messages)
         self.assertEqual(second.turns[0].rag_context, retrieved("FIRST_ONLY"))
         third = self.send("Третий", enabled=False)
         self.assertEqual(self.service.retriever.retrieve.call_count, 2)
-        messages = json.dumps(self.complete.call_args.kwargs["messages"])
-        self.assertNotIn("SECOND_ONLY", messages)
+        messages = self.complete.call_args.kwargs["messages"]
+        self.assertFalse(any(item["content"].startswith("Справочные фрагменты базы") for item in messages))
         self.assertIsNone(third.turns[-1].rag_context)
 
     def test_legacy_json_defaults_to_disabled_rag(self):
@@ -115,6 +126,7 @@ class ConversationRAGTests(unittest.TestCase):
             turn.pop("rag_enabled")
             turn.pop("rag_context")
             turn.pop("rag_settings")
+            turn.pop("rag_answer")
         path.write_text(json.dumps(data), encoding="utf-8")
         restored = ConversationService(self.directory, "test-token").get(result.id)
         self.assertFalse(restored.settings.rag_enabled)
@@ -131,6 +143,7 @@ class ConversationRAGTests(unittest.TestCase):
             if key.startswith("rag_") and key != "rag_enabled":
                 del data["settings"][key]
         data["turns"][0].pop("rag_settings")
+        data["turns"][0].pop("rag_answer")
         path.write_text(json.dumps(data), encoding="utf-8")
         restored = self.service.store.load(result.id)
         self.assertTrue(restored.settings.rag_enabled)
@@ -153,6 +166,7 @@ class ConversationRAGTests(unittest.TestCase):
         self.assertEqual(result.turns[-1].status, "completed")
 
     def test_meta_prompt_reuses_original_retrieval_for_both_stages(self):
+        self.complete.side_effect = [completion(), grounded_completion()]
         result = self.service.send(
             self.conversation.id, "Исходный вопрос", settings=ContextSettings(rag_enabled=True),
             options=RequestOptions(meta_prompt=True),
@@ -210,6 +224,65 @@ class ConversationRAGTests(unittest.TestCase):
         self.assertTrue(changed.turns[-1].rag_settings.filter_enabled)
         self.assertFalse(changed.settings.rag_enabled)
 
+    def test_threshold_gate_applies_without_filter_and_before_meta_or_facts(self):
+        context = retrieved()
+        context["chunks"][0]["score"] = 0.34
+        self.service.retriever.retrieve.return_value = context
+        result = self.service.send(self.conversation.id, "Вопрос", settings=ContextSettings(
+            rag_enabled=True, rag_filter_enabled=False, strategy="facts",
+        ), options=RequestOptions(meta_prompt=True))
+        self.complete.assert_not_called()
+        turn = result.turns[-1]
+        self.assertEqual(turn.status, "completed")
+        self.assertEqual(turn.rag_answer["status"], "unknown")
+        self.assertIsNone(turn.meta_prompt)
+        self.assertEqual(self.service.store.load(result.id), result)
+        self.assertEqual(HistoryManager._decode_data(result.working_context)[3].total_tokens, 0)
+
+    def test_threshold_equality_allows_generation_and_json_result(self):
+        context = retrieved()
+        context["chunks"][0]["score"] = 0.35
+        self.service.retriever.retrieve.return_value = context
+        result = self.service.send(self.conversation.id, "Вопрос", settings=ContextSettings(
+            rag_enabled=True,
+        ), options=RequestOptions(response_format="object"))
+        self.complete.assert_called_once()
+        self.assertEqual(json.loads(result.turns[-1].answer), result.turns[-1].rag_answer)
+        self.assertEqual(self.service.store.load(result.id), result)
+
+    def test_bad_draft_is_not_published_or_saved_and_usage_is_retained(self):
+        self.complete.return_value = completion()
+        callbacks = []
+        result = self.service.send(self.conversation.id, "Вопрос", settings=ContextSettings(
+            rag_enabled=True,
+        ), on_response=callbacks.append)
+        self.assertEqual(self.complete.call_count, 2)
+        self.assertEqual(result.turns[-1].status, "error")
+        self.assertIsNone(result.turns[-1].answer)
+        self.assertIsNone(result.turns[-1].rag_answer)
+        self.assertEqual(callbacks, [])
+        history = HistoryManager._decode_data(result.working_context)
+        self.assertEqual(history[0], [])
+        self.assertEqual(history[3].total_tokens, 260)
+
+    def test_saved_evidence_and_rendered_text_are_checked_on_load(self):
+        result = self.send()
+        path = self.service.store.path(result.id)
+        original = json.loads(path.read_text(encoding="utf-8"))
+        for field in ("source", "quote", "answer"):
+            with self.subTest(field=field):
+                data = deepcopy(original)
+                turn = data["turns"][0]
+                if field == "source":
+                    turn["rag_answer"]["sources"][0]["source"] = "invented.md"
+                elif field == "quote":
+                    turn["rag_answer"]["quotes"][0]["text"] = "invented quote"
+                else:
+                    turn["answer"] = "Другой ответ"
+                path.write_text(json.dumps(data), encoding="utf-8")
+                with self.assertRaises(ConversationStorageError):
+                    self.service.store.load(result.id)
+
 
 class RetrieverTests(unittest.TestCase):
     def setUp(self):
@@ -257,6 +330,18 @@ class RetrieverTests(unittest.TestCase):
         result = self.retriever.retrieve("Вопрос")
         self.assertEqual(result["chunks"][0]["chunk_id"], "first")
         self.embedder_class.assert_called_once()
+
+    def test_sentence_transformer_settings_are_restored_from_index(self):
+        self.metadata["embedding"].update(
+            backend="sentence_transformers", query_prefix="query instruction: ", passage_prefix="",
+        )
+        self.save()
+        self.embedder.metadata = deepcopy(self.metadata["embedding"])
+        self.retriever.retrieve("Вопрос")
+        self.embedder_class.assert_called_once_with(
+            "test-model", "test-revision", "test-cache", True,
+            backend="sentence_transformers", query_prefix="query instruction: ", passage_prefix="",
+        )
 
     def test_incompatible_model_is_rejected_before_inference(self):
         self.embedder.metadata["revision"] = "wrong-revision"
@@ -344,10 +429,10 @@ class RetrieverTests(unittest.TestCase):
         self.assertEqual(context["chunks"], [])
         self.assertEqual(context["counts"], dict(found=2, passed=0, selected=0))
         self.assertEqual(service.store.load(result.id), result)
-        messages = json.dumps(complete.call_args.kwargs["messages"], ensure_ascii=False)
-        self.assertIn("релевантных фрагментов не найдено", messages)
+        complete.assert_not_called()
+        self.assertEqual(result.turns[-1].rag_answer["status"], "unknown")
+        self.assertIn("Не знаю", result.turns[-1].answer)
         for text in ("alpha", "beta"):
-            self.assertNotIn(text, messages)
             self.assertNotIn(text, json.dumps(result.working_context))
         self.assertEqual(context["settings"]["similarity_threshold"], 0.5)
         path = service.store.path(result.id)

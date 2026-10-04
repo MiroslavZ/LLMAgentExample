@@ -10,7 +10,7 @@ from pathlib import Path
 
 from openai import OpenAI
 
-from .indexing.embeddings import Embedder
+from .indexing.embeddings import Embedder, embedding_options
 from .indexing.store import load_index, search
 from .models import RAGSettings
 
@@ -124,7 +124,8 @@ class Retriever:
             try:
                 embedding_settings = metadata["embedding"]
                 if self._embedder is None or self._embedder.metadata != embedding_settings:
-                    embedder = Embedder(embedding_settings["model"], embedding_settings["revision"], self.cache, self.offline)
+                    embedder = Embedder(embedding_settings["model"], embedding_settings["revision"], self.cache, self.offline,
+                                        **embedding_options(embedding_settings))
                     if embedder.metadata != embedding_settings:
                         raise RAGError("RAG: модель или версии библиотек не совпадают с индексом. Пересоберите индекс.")
                     self._embedder = embedder

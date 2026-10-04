@@ -130,7 +130,7 @@ class ConversationStore:
         turns = []
         turn_fields = {field.name for field in fields(Turn)}
         for item in values["turns"]:
-            optional_fields = {"tool_calls", "rag_enabled", "rag_context", "rag_settings"}
+            optional_fields = {"tool_calls", "rag_enabled", "rag_context", "rag_settings", "rag_answer"}
             if (not isinstance(item, dict) or not set(item) <= turn_fields
                     or not turn_fields - optional_fields <= set(item)):
                 raise ValueError("Некорректный формат хода диалога")
@@ -166,6 +166,14 @@ class ConversationStore:
                 validate_rag_context(turn.rag_context, turn.rag_settings)
             if turn.rag_settings is not None and not turn.rag_enabled:
                 raise ValueError("Настройки RAG сохранены для выключенного режима")
+            if turn.rag_answer is not None:
+                from .rag_answer import render_answer, validate_saved_answer
+
+                if not turn.rag_enabled or turn.rag_context is None or turn.answer is None:
+                    raise ValueError("Ответ RAG сохранён без контекста")
+                validate_saved_answer(turn.rag_answer, turn.rag_context)
+                if turn.answer != render_answer(turn.rag_answer, turn.options.response_format):
+                    raise ValueError("Текст ответа RAG не совпадает с доказательствами")
             datetime.fromisoformat(turn.created_at)
             turns.append(turn)
         values["turns"] = turns

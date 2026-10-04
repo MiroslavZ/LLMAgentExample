@@ -7,11 +7,21 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from llm_agent.indexing.__main__ import main
+from llm_agent.indexing.__main__ import main, parser
 from llm_agent.indexing.embeddings import Embedder
 
 
 class IndexingCliTests(unittest.TestCase):
+    def test_build_accepts_embedding_model_id_and_prefixes(self):
+        args = parser().parse_args([
+            "build", "--model", "BAAI/bge-m3", "--query-prefix", "query: ",
+            "--passage-prefix", "", "--offline",
+        ])
+        self.assertEqual(args.model, "BAAI/bge-m3")
+        self.assertEqual(args.query_prefix, "query: ")
+        self.assertEqual(args.passage_prefix, "")
+        self.assertTrue(args.offline)
+
     def test_missing_index_is_error_and_does_not_create_database(self):
         with tempfile.TemporaryDirectory() as folder:
             with contextlib.redirect_stderr(io.StringIO()):

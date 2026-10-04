@@ -51,10 +51,11 @@ def _tool_code(content: str, *, language: str) -> None:
 
 def render_rag_context(context: dict) -> None:
     chunks = context["chunks"]
-    with ui.expansion(f"Источники RAG · {len(chunks)}", icon="library_books").classes("w-full"):
+    with ui.expansion(f"Найденные фрагменты RAG · {len(chunks)}", icon="library_books").classes("w-full"):
         ui.label(f"Индекс: {context['index']}").classes("memory-description")
+        ui.label("Результаты поиска не равны использованным доказательствам. Источники и цитаты ответа приведены в самом ответе.").classes("setting-note")
         if not chunks:
-            ui.label("После отбора релевантных фрагментов не осталось. Ответ не опирается на базу знаний.").classes("setting-note")
+            ui.label("После отбора релевантных фрагментов не осталось. Для нового RAG-ответа требуется уточнение вопроса.").classes("setting-note")
         for number, chunk in enumerate(chunks, start=1):
             with ui.expansion(f"[{number}] {chunk['source']}", icon="description").classes("w-full"):
                 ui.label(f"Раздел: {chunk['section'] or '—'}").classes("memory-description")
@@ -66,9 +67,10 @@ def render_rag_context(context: dict) -> None:
             ui.label(f"Исходный вопрос: {context['original_query']}").classes("whitespace-pre-wrap break-words")
             ui.label(f"Поисковый запрос: {context['search_query']}").classes("whitespace-pre-wrap break-words")
             settings = context["settings"]
-            threshold = str(settings["similarity_threshold"]) if settings["filter_enabled"] else "выключен"
+            threshold = str(settings["similarity_threshold"])
+            filter_label = "включён" if settings["filter_enabled"] else "выключен"
             ui.label(
-                f"Top-K: {settings['top_k_before']} → {settings['top_k_after']} · Порог cosine: {threshold}"
+                f"Top-K: {settings['top_k_before']} → {settings['top_k_after']} · Порог cosine: {threshold} · Фильтр чанков: {filter_label}"
             ).classes("memory-description")
             counts = context["counts"]
             ui.label(

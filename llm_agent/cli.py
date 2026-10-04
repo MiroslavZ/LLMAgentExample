@@ -102,13 +102,13 @@ def parse_args() -> argparse.Namespace:
     relevance.add_argument("--rag-filter", dest="rag_filter_enabled", action="store_true", default=None,
                            help="Отсекать кандидатов ниже порога cosine similarity")
     relevance.add_argument("--no-rag-filter", dest="rag_filter_enabled", action="store_false",
-                           help="Не применять порог релевантности")
+                           help="Не отсеивать отдельные чанки; проверка достаточности контекста остаётся включённой")
     parser.add_argument("--rag-top-k-before", type=positive_int, metavar="N",
                         help="Количество кандидатов поиска до отбора")
     parser.add_argument("--rag-top-k-after", type=positive_int, metavar="N",
                         help="Максимум фрагментов после отбора; не больше --rag-top-k-before")
     parser.add_argument("--rag-similarity-threshold", type=cosine_threshold, metavar="SCORE",
-                        help="Минимальное cosine similarity от -1 до 1; действует с --rag-filter")
+                        help="Порог достаточности контекста от -1 до 1; с --rag-filter также отсекает чанки")
     parser.add_argument("--mcp-url", help="Сохранить общий MCP-сервер для CLI и веба (ID: cli)")
     parser.add_argument("--mcp-token-env", default="", help="Имя переменной с MCP Bearer-токеном (не сам токен)")
     task_action = parser.add_mutually_exclusive_group()
@@ -660,7 +660,7 @@ def send_message(args: argparse.Namespace, conversation: Conversation, options: 
     if not responses:
         for title, content in (("Сгенерированный промпт", turn.meta_prompt), ("Ответ", turn.answer)):
             if content is not None:
-                console.print(Panel(Markdown(content), title=title))
+                console.print(Panel(render_content(content, args.response_format if title == "Ответ" else "text"), title=title))
     print_task_state(result.task_state)
     if turn.error:
         raise ValueError(turn.error)
@@ -670,7 +670,7 @@ def print_rag_sources(turn: Turn) -> None:
     if turn.rag_context is None:
         return
     context = turn.rag_context
-    sources = Table(title="Источники RAG")
+    sources = Table(title="Найденные фрагменты RAG · диагностика")
     for column in ("№", "Источник", "Раздел", "Чанк", "Cosine similarity"):
         sources.add_column(column)
     for number, chunk in enumerate(context["chunks"], start=1):
@@ -678,14 +678,16 @@ def print_rag_sources(turn: Turn) -> None:
                         Text(str(chunk["chunk_id"])), f"{chunk['score']:.3f}")
     console.print(Text(f"Индекс: {context['index']}"))
     console.print(sources)
+    console.print("Результаты поиска не равны использованным доказательствам. Источники и цитаты ответа приведены в самом ответе.")
     if not context["chunks"]:
-        console.print("После отбора релевантных фрагментов не осталось. Ответ не опирается на базу знаний.")
+        console.print("После отбора релевантных фрагментов не осталось. Для нового RAG-ответа требуется уточнение вопроса.")
     if "original_query" not in context:
         return
     console.print(Text(f"Исходный вопрос: {context['original_query']}\nПоисковый запрос: {context['search_query']}"))
     settings = context["settings"]
-    threshold = str(settings["similarity_threshold"]) if settings["filter_enabled"] else "выключен"
-    console.print(f"Top-K: {settings['top_k_before']} → {settings['top_k_after']} · Порог cosine: {threshold}")
+    threshold = str(settings["similarity_threshold"])
+    filter_label = "включён" if settings["filter_enabled"] else "выключен"
+    console.print(f"Top-K: {settings['top_k_before']} → {settings['top_k_after']} · Порог cosine: {threshold} · Фильтр чанков: {filter_label}")
     counts = context["counts"]
     console.print(f"Найдено: {counts['found']} · Прошло порог: {counts['passed']} · Передано модели: {counts['selected']}")
     rewrite = context["rewrite"]

@@ -102,7 +102,7 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(text, self.labels(transcript))
         self.assertFalse(any(isinstance(element, ui.markdown) for element in transcript.descendants()))
         expansions = [element for element in transcript.descendants() if isinstance(element, ui.expansion)]
-        self.assertEqual([element.text for element in expansions], ["Источники RAG · 1", "[1] <b>file.md</b>"])
+        self.assertEqual([element.text for element in expansions], ["Найденные фрагменты RAG · 1", "[1] <b>file.md</b>"])
         self.assertTrue(all(not element.value for element in expansions))
 
     async def test_rag_controls_react_before_save_and_preserve_disabled_settings(self):
@@ -114,7 +114,7 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(page.rag_threshold_input.enabled)
             page.rag_input.set_value(True)
             self.assertTrue(all(widget.enabled for widget in dependent))
-            self.assertFalse(page.rag_threshold_input.enabled)
+            self.assertTrue(page.rag_threshold_input.enabled)
             page.rag_filter_input.set_value(True)
             self.assertTrue(page.rag_threshold_input.enabled)
             page.rag_rewrite_input.set_value(True)
@@ -176,7 +176,7 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
                         restore=lambda: None, busy=False)
         labels = self.labels(transcript)
         self.assertIn("RAG + rewrite + фильтр", labels)
-        self.assertIn("После отбора релевантных фрагментов не осталось. Ответ не опирается на базу знаний.", labels)
+        self.assertIn("После отбора релевантных фрагментов не осталось. Для нового RAG-ответа требуется уточнение вопроса.", labels)
         self.assertIn("Исходный вопрос: <b>Вопрос</b>", labels)
         self.assertIn("Причина fallback: <script>failed</script>", labels)
         self.assertIn("Найдено: 1 · Прошло порог: 0 · Передано модели: 0", labels)

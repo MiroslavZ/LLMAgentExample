@@ -286,6 +286,13 @@ class HistoryManager:
         self._validate(messages)
         self._save(messages, facts=self._facts, task_state=task_state if task_state is not None else _UNCHANGED)
 
+    def add_rag_exchange(
+        self, user: str, assistant: str, usage: TokenUsage | None, *,
+        rag_answer: dict, task_state: TaskState | None = None,
+    ) -> None:
+        """Сохранить проверенный финал; адаптер сервиса также сохраняет доказательства."""
+        self.add_exchange(user, assistant, usage, task_state=task_state)
+
     def add_refusal(self, user: str, assistant: str, usage: TokenUsage | None) -> None:
         """Сохранить окончательный отказ, не меняя состояние задачи."""
         self.add_exchange(user, assistant, usage)

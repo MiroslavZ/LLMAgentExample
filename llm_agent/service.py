@@ -84,6 +84,19 @@ class _ConversationHistory(HistoryManager):
         finally:
             self._turn_updates = {}
 
+    def add_rag_exchange(
+        self, user: str, assistant: str, usage: TokenUsage | None, *,
+        rag_answer: dict, task_state: TaskState | None = None,
+    ) -> None:
+        self._turn_updates = {
+            "answer": assistant, "rag_answer": deepcopy(rag_answer), "status": "completed",
+            "elapsed_seconds": time.perf_counter() - self.started_at,
+        }
+        try:
+            super().add_exchange(user, assistant, usage, task_state=task_state)
+        finally:
+            self._turn_updates = {}
+
     def update_facts(self, facts: dict[str, str], usage: TokenUsage | None) -> None:
         self._turn_updates = {"memory_updated": True}
         try:
@@ -511,6 +524,7 @@ class ConversationService:
                 }
                 if conversation.turns[-1].rag_context is not None:
                     agent_options["rag_context"] = conversation.turns[-1].rag_context
+                    agent_options["rag_threshold"] = settings.rag_similarity_threshold
                 if any(server.enabled for server in agent_options["mcp_servers"]) or any(
                     is_observation(call) for turn in conversation.turns for call in turn.tool_calls
                 ) or any(

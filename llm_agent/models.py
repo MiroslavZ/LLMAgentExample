@@ -128,6 +128,7 @@ class Turn:
     rag_enabled: bool = False
     rag_context: dict | None = None
     rag_settings: RAGSettings | None = None
+    rag_answer: dict | None = None
 
 
 @dataclass

@@ -542,7 +542,7 @@ class ChatPage:
             self.render_strategy_fields()
             self.rag_input = ui.checkbox("Использовать RAG", value=settings.rag_enabled)
             self.rag_input.set_enabled(not self.busy)
-            ui.label("Добавляет найденные фрагменты к следующему вопросу. Режим можно менять в ходе диалога.").classes("setting-note")
+            ui.label("Ответ с источниками и цитатами. При слабом контексте агент скажет «Не знаю» и попросит уточнение.").classes("setting-note")
             self.rag_rewrite_input = ui.checkbox("Query rewrite · переписать запрос", value=settings.rag_rewrite_enabled)
             ui.label("Отдельный запрос к модели уточняет формулировку для поиска. Ответ строится по исходному вопросу.").classes("setting-note")
             self.rag_filter_input = ui.checkbox("Filter · фильтр релевантности", value=settings.rag_filter_enabled)
@@ -555,7 +555,7 @@ class ChatPage:
             self.rag_threshold_input = ui.number(
                 "Порог cosine similarity", value=settings.rag_similarity_threshold, min=-1, max=1, step=0.01,
             ).props("outlined dense").classes("w-full")
-            ui.label("Фильтр оставляет score ≥ порога и сохраняет порядок поиска. Cosine — сходство, а не вероятность правильного ответа.").classes("setting-note")
+            ui.label("Порог всегда проверяет достаточность контекста, даже при выключенном фильтре. Фильтр дополнительно отсеивает отдельные чанки. Cosine — сходство, а не вероятность правильного ответа.").classes("setting-note")
             self.rag_input.on_value_change(lambda: self.update_rag_controls())
             self.rag_filter_input.on_value_change(lambda: self.update_rag_controls())
             self.update_rag_controls()
@@ -576,7 +576,7 @@ class ChatPage:
         for widget in (self.rag_rewrite_input, self.rag_filter_input,
                        self.rag_top_k_before_input, self.rag_top_k_after_input):
             widget.set_enabled(enabled)
-        self.rag_threshold_input.set_enabled(enabled and self.rag_filter_input.value)
+        self.rag_threshold_input.set_enabled(enabled)
 
     def render_strategy_fields(self) -> None:
         strategy = self.strategy_input.value

@@ -11,6 +11,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from rich.console import Console
+from openai.types.chat import ChatCompletion
+
+from llm_agent.agent import RequestResult
 
 from llm_agent.cli import context_settings, parse_args, print_rag_sources, run, send_message
 from llm_agent.models import ContextSettings, RAGSettings, RequestOptions, Turn
@@ -101,6 +104,31 @@ class RAGCLITests(unittest.TestCase):
         data = json.loads(stdout.getvalue())
         self.assertEqual(data["rag_settings"], asdict(result.turns[0].rag_settings))
         self.assertTrue(data["rag_enabled"])
+
+    def test_rag_prints_verified_result_and_usage_instead_of_raw_response(self):
+        result = self.service.get(self.conversation.id)
+        result.turns = [Turn(user="Вопрос", answer="Проверенный ответ", status="completed", rag_enabled=True)]
+        output = io.StringIO()
+        with patch("sys.argv", self.arguments("--user", "Вопрос")):
+            args = parse_args()
+
+        def send(*args, **kwargs):
+            response = ChatCompletion(
+                id="test", object="chat.completion", created=0, model="test",
+                choices=[{"index": 0, "finish_reason": "stop", "message": {
+                    "role": "assistant", "content": "RAW_UNVERIFIED_JSON",
+                }}],
+                usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            )
+            kwargs["on_response"](RequestResult(response, 0.1, answer="Проверенный ответ"))
+            return result
+
+        with patch("llm_agent.cli.ConversationService") as factory, patch("llm_agent.cli.console", Console(file=output)):
+            factory.return_value.send.side_effect = send
+            send_message(args, self.conversation, RequestOptions())
+        self.assertIn("Проверенный ответ", output.getvalue())
+        self.assertIn("Токены за запрос", output.getvalue())
+        self.assertNotIn("RAW_UNVERIFIED_JSON", output.getvalue())
 
     def test_empty_sources_explain_filtering_and_fallback_with_literal_input(self):
         settings = RAGSettings(filter_enabled=True, rewrite_enabled=True, similarity_threshold=0.9)

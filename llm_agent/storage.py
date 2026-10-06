@@ -15,6 +15,7 @@ from typing import Iterator
 from .history import HistoryManager
 from .models import ContextSettings, Conversation, RAGSettings, RequestOptions, Turn
 from .rag_validation import validate_rag_context
+from .rag_dialogue import validate_memory
 from .tool_events import ToolCallRecord
 
 
@@ -120,7 +121,10 @@ class ConversationStore:
             not isinstance(data, dict)
             or type(data.get("version")) is not int
             or data["version"] != cls.VERSION
-            or set(data) != {"version", *(field.name for field in fields(Conversation))}
+            or set(data) - {"dialogue_task_memory"} != {
+                "version", *(field.name for field in fields(Conversation)
+                             if field.name != "dialogue_task_memory")
+            }
         ):
             raise ValueError("Неизвестный формат диалога")
         values = data.copy()
@@ -130,7 +134,7 @@ class ConversationStore:
         turns = []
         turn_fields = {field.name for field in fields(Turn)}
         for item in values["turns"]:
-            optional_fields = {"tool_calls", "rag_enabled", "rag_context", "rag_settings", "rag_answer"}
+            optional_fields = {"tool_calls", "rag_enabled", "rag_context", "rag_settings", "rag_answer", "rag_preparation"}
             if (not isinstance(item, dict) or not set(item) <= turn_fields
                     or not turn_fields - optional_fields <= set(item)):
                 raise ValueError("Некорректный формат хода диалога")
@@ -166,18 +170,45 @@ class ConversationStore:
                 validate_rag_context(turn.rag_context, turn.rag_settings)
             if turn.rag_settings is not None and not turn.rag_enabled:
                 raise ValueError("Настройки RAG сохранены для выключенного режима")
+            if turn.rag_preparation is not None:
+                diagnostic = turn.rag_preparation
+                if (not turn.rag_enabled or not isinstance(diagnostic, dict)
+                        or set(diagnostic) != {"status", "reason", "elapsed_seconds", "usage"}
+                        or diagnostic["status"] not in ("success", "fallback")
+                        or (diagnostic["reason"] is not None and not isinstance(diagnostic["reason"], str))
+                        or type(diagnostic["elapsed_seconds"]) not in (int, float)
+                        or not math.isfinite(diagnostic["elapsed_seconds"])
+                        or diagnostic["elapsed_seconds"] < 0):
+                    raise ValueError("Некорректная подготовка RAG")
+                usage = diagnostic["usage"]
+                if usage is not None and (
+                    not isinstance(usage, dict)
+                    or set(usage) != {"prompt_tokens", "completion_tokens", "total_tokens"}
+                    or any(type(value) is not int or value < 0 for value in usage.values())
+                    or usage["total_tokens"] != usage["prompt_tokens"] + usage["completion_tokens"]
+                ):
+                    raise ValueError("Некорректные токены подготовки RAG")
             if turn.rag_answer is not None:
                 from .rag_answer import render_answer, validate_saved_answer
 
                 if not turn.rag_enabled or turn.rag_context is None or turn.answer is None:
                     raise ValueError("Ответ RAG сохранён без контекста")
                 validate_saved_answer(turn.rag_answer, turn.rag_context)
-                if turn.answer != render_answer(turn.rag_answer, turn.options.response_format):
-                    raise ValueError("Текст ответа RAG не совпадает с доказательствами")
+                rendered = render_answer(turn.rag_answer, turn.options.response_format)
+                if turn.answer != rendered:
+                    legacy_unknown = (
+                        turn.rag_answer["status"] == "unknown"
+                        and turn.options.response_format == "text"
+                        and turn.answer == turn.rag_answer["answer"] + "\n\n" + turn.rag_answer["clarification"]
+                    )
+                    if not legacy_unknown:
+                        raise ValueError("Текст ответа RAG не совпадает с доказательствами")
+                    turn.answer = rendered
             datetime.fromisoformat(turn.created_at)
             turns.append(turn)
         values["turns"] = turns
         conversation = Conversation(**values)
+        validate_memory(conversation.dialogue_task_memory, turns)
         if (
             conversation.id != conversation_id
             or any(not isinstance(value, str) for value in (

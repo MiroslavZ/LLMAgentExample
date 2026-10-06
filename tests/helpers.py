@@ -1,6 +1,20 @@
 """Общие фабрики тестовых данных."""
 
+from copy import deepcopy
+from unittest.mock import patch
+
 from openai.types.chat import ChatCompletion
+
+
+def rag_preparation(question, memory, turns, token, model, *, rewrite_enabled):
+    """Подготовка без сети и изменений памяти для тестов остальных подсистем."""
+    diagnostic = dict(status="success", reason=None, elapsed_seconds=0.0, usage=None)
+    rewrite = dict(query=question, **diagnostic) if rewrite_enabled else None
+    return dict(memory=deepcopy(memory), rewrite=rewrite, diagnostic=diagnostic)
+
+
+def patch_rag_preparation(testcase):
+    return testcase.enterContext(patch("llm_agent.service.prepare_turn", side_effect=rag_preparation))
 
 
 def completion(prompt=100, output=30, *, missing=False):

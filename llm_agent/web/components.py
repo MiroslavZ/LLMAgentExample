@@ -7,6 +7,7 @@ from datetime import datetime
 from nicegui import ui
 
 from ..models import Turn
+from ..rag_answer import render_answer
 
 STRATEGIES = {
     "full": "Вся история",
@@ -122,6 +123,14 @@ def render_turn(turn: Turn, *, restore: Callable[[], None], busy: bool) -> None:
         if turn.meta_prompt is not None:
             with ui.expansion("Сгенерированный промпт", icon="auto_fix_high").classes("meta-result"):
                 ui.markdown(turn.meta_prompt).classes("message-markdown")
+        if turn.rag_preparation is not None:
+            diagnostic = turn.rag_preparation
+            with ui.expansion("Подготовка диалога", icon="psychology").classes("w-full"):
+                ui.label(f"{diagnostic['status']} · {diagnostic['elapsed_seconds']:.2f} с")
+                if diagnostic["reason"]:
+                    ui.label(diagnostic["reason"])
+                if diagnostic["usage"] is not None:
+                    ui.label(f"Токены подготовки: {diagnostic['usage']['total_tokens']}")
         if turn.rag_context is not None:
             render_rag_context(turn.rag_context)
         for step, call in enumerate(turn.tool_calls, start=1):
@@ -150,7 +159,9 @@ def render_turn(turn: Turn, *, restore: Callable[[], None], busy: bool) -> None:
                     if turn.elapsed_seconds is not None:
                         ui.label(f"{turn.elapsed_seconds:.1f} с").classes("message-time")
                 if turn.answer:
-                    ui.markdown(turn.answer).classes("message-markdown")
+                    answer = (render_answer(turn.rag_answer, turn.options.response_format)
+                              if turn.rag_answer is not None else turn.answer)
+                    ui.markdown(answer).classes("message-markdown")
                 else:
                     ui.label("Модель вернула пустой ответ.").classes("muted")
         if turn.status == "running":

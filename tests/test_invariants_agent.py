@@ -74,6 +74,12 @@ class AgentInvariantTests(unittest.TestCase):
         self.assertNotIn("<invariants>", json.dumps(self.create.call_args.kwargs["messages"]))
         self.assert_usage(1)
 
+    def test_rag_invariant_refusal_explicitly_has_no_document_sources(self):
+        self.create.return_value = verdict("fail")
+        result = self.agent(rag_context={"index": "test", "chunks": []}).request("Используй Java")
+        self.assertTrue(result.refused)
+        self.assertIn("Источники: ответ заблокирован", result.content)
+
     def test_refusal_drops_extra_choices_tool_calls_and_provider_reasoning(self):
         draft = response("Отклонённое решение")
         raw = draft.model_dump()

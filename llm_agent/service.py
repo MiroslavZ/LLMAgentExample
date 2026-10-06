@@ -32,7 +32,8 @@ from .storage import ConversationBusyError, ConversationStorageError, Conversati
 from .task_state import CONTINUE_TASK, PLAN_APPROVAL_REQUIRED, TaskStage, TaskState, TaskStateError
 from .tool_events import ToolCallRecord
 from .observations import ObservationReader, is_observation
-from .rag import RAGError, Retriever, rewrite_query
+from .rag import RAGError, Retriever
+from .rag_dialogue import prepare_turn
 
 
 class _ConversationHistory(HistoryManager):
@@ -502,11 +503,17 @@ class ConversationService:
                     return deepcopy(conversation)
                 if conversation.settings.rag_enabled:
                     rag_settings = conversation.turns[-1].rag_settings
-                    rewritten = None
-                    if rag_settings.rewrite_enabled:
-                        rewritten = rewrite_query(user.strip(), self._token, options.model or DEFAULT_MODEL)
+                    prepared = prepare_turn(
+                        user.strip(), conversation.dialogue_task_memory, conversation.turns,
+                        self._token, options.model or DEFAULT_MODEL,
+                        rewrite_enabled=rag_settings.rewrite_enabled,
+                    )
+                    conversation.dialogue_task_memory = prepared["memory"]
+                    conversation.turns[-1].rag_preparation = prepared["diagnostic"]
+                    # Уточнения сохраняются даже при отказе или ошибке поиска.
+                    self._save(conversation)
                     conversation.turns[-1].rag_context = self.retriever.retrieve(
-                        user.strip(), rag_settings, rewrite=rewritten,
+                        user.strip(), rag_settings, rewrite=prepared["rewrite"],
                     )
                     self._save(conversation)
                 memory = self.memory.snapshot(conversation_id)
@@ -525,6 +532,7 @@ class ConversationService:
                 if conversation.turns[-1].rag_context is not None:
                     agent_options["rag_context"] = conversation.turns[-1].rag_context
                     agent_options["rag_threshold"] = settings.rag_similarity_threshold
+                    agent_options["dialogue_task_memory"] = conversation.dialogue_task_memory
                 if any(server.enabled for server in agent_options["mcp_servers"]) or any(
                     is_observation(call) for turn in conversation.turns for call in turn.tool_calls
                 ) or any(

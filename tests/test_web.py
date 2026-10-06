@@ -11,7 +11,8 @@ from unittest.mock import Mock, patch
 from nicegui import Client, core, ui
 from nicegui.elements.timer import Timer
 
-from llm_agent.models import ContextSettings, RAGSettings, Turn
+from llm_agent.models import ContextSettings, RAGSettings, RequestOptions, Turn
+from llm_agent.rag_answer import render_answer, unknown_answer
 from llm_agent.service import ConversationService, ConversationStorageError
 from llm_agent.tool_events import ToolAttachment, ToolCallRecord
 from llm_agent.web.components import render_turn
@@ -130,7 +131,23 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(page.rag_rewrite_input.enabled)
             self.assertFalse(page.rag_threshold_input.enabled)
             page.save_settings()
-            self.assertEqual(self.service.get(self.conversation.id).settings, replace(expected, rag_enabled=False))
+        self.assertEqual(self.service.get(self.conversation.id).settings, replace(expected, rag_enabled=False))
+
+    async def test_rag_unknown_always_displays_sources_without_changing_json_format(self):
+        result = unknown_answer()
+        legacy_text = result["answer"] + "\n\n" + result["clarification"]
+        for response_format in ("text", "object", "schema"):
+            with self.subTest(response_format=response_format):
+                turn = Turn(user="Вопрос", answer=legacy_text, rag_enabled=True,
+                            rag_answer=result, options=RequestOptions(response_format=response_format),
+                            status="completed")
+                with self.client, ui.column() as transcript:
+                    render_turn(turn, restore=lambda: None, busy=False)
+                answer = next(element for element in transcript.descendants()
+                              if isinstance(element, ui.markdown))
+                self.assertEqual(answer.content, render_answer(result, response_format))
+                if response_format == "text":
+                    self.assertIn("Источники: подтверждающие материалы не найдены", answer.content)
 
     async def test_running_request_disables_all_rag_controls(self):
         self.queue_submissions()

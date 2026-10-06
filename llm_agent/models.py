@@ -8,6 +8,7 @@ from typing import Literal
 from .history import HistoryManager
 from .task_state import TaskState
 from .tool_events import ToolCallRecord
+from .rag_dialogue import empty_memory
 
 
 def utc_now() -> str:
@@ -129,6 +130,7 @@ class Turn:
     rag_context: dict | None = None
     rag_settings: RAGSettings | None = None
     rag_answer: dict | None = None
+    rag_preparation: dict | None = None
 
 
 @dataclass
@@ -142,6 +144,7 @@ class Conversation:
     # Историческое имя поля JSON: это краткосрочный контекст стратегии,
     # а не явная рабочая память задачи (она хранится в MemoryStore).
     working_context: object = field(default_factory=list)
+    dialogue_task_memory: dict = field(default_factory=empty_memory)
     created_at: str = field(default_factory=utc_now)
     updated_at: str = field(default_factory=utc_now)
 

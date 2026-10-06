@@ -196,6 +196,21 @@ class MemoryPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(memory.long_term, {"язык": "Русский"})
         self.assertEqual(self.service.get(self.conversation.id).turns, self.conversation.turns)
 
+    async def test_dialogue_memory_shows_provenance_and_survives_manual_clear(self):
+        self.conversation.started = True
+        self.conversation.turns = [Turn("Моя цель — изучить Python", answer="Начнём", status="completed")]
+        self.conversation.dialogue_task_memory["goal"] = {
+            "value": "Изучить Python", "quote": "изучить Python", "turn": 1,
+        }
+        self.service.store.save(self.conversation)
+        with self.client:
+            page = self.build_page()
+            labels = self.labels(page.dialogue_memory_content)
+            self.assertIn("Изучить Python", labels)
+            self.assertIn("Ход 1: «изучить Python»", labels)
+            page.clear_working_memory()
+            self.assertEqual(page.snapshot.dialogue_task_memory, self.conversation.dialogue_task_memory)
+
 
 if __name__ == "__main__":
     unittest.main()

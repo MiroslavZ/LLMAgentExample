@@ -523,6 +523,7 @@ def print_memory(conversation: Conversation, path: Path, snapshot: MemorySnapsho
         },
         "working": snapshot.working,
         "long_term": snapshot.long_term,
+        "dialogue_task_memory": conversation.dialogue_task_memory,
     }
     print_json(data)
 
@@ -667,6 +668,13 @@ def send_message(args: argparse.Namespace, conversation: Conversation, options: 
 
 
 def print_rag_sources(turn: Turn) -> None:
+    if turn.rag_preparation is not None:
+        diagnostic = turn.rag_preparation
+        console.print(Text(f"Подготовка диалога: {diagnostic['status']} · {diagnostic['elapsed_seconds']:.2f} с"))
+        if diagnostic["reason"]:
+            console.print(Text(diagnostic["reason"]))
+        if diagnostic["usage"] is not None:
+            console.print(Text(f"Токены подготовки: {diagnostic['usage']['total_tokens']}"))
     if turn.rag_context is None:
         return
     context = turn.rag_context

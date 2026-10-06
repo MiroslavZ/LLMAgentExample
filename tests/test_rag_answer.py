@@ -117,6 +117,9 @@ class RAGAnswerTests(unittest.TestCase):
             self.assertEqual(json.loads(render_answer(result, response_format)), result)
         result = unknown_answer()
         self.assertIn(result["clarification"], render_answer(result))
+        self.assertIn("Источники: подтверждающие материалы не найдены", render_answer(result))
+        for response_format in ("object", "schema"):
+            self.assertEqual(json.loads(render_answer(result, response_format)), result)
         with self.assertRaises(ValueError):
             render_answer(result, "invalid")
 

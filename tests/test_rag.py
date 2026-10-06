@@ -14,7 +14,7 @@ from llm_agent.rag import RAGError, RAG_INSTRUCTION, Retriever, rewrite_query, s
 from llm_agent.rag_validation import validate_rag_context
 from llm_agent.storage import ConversationStorageError
 from llm_agent.service import ConversationService
-from tests.helpers import completion
+from tests.helpers import completion, patch_rag_preparation, rag_preparation
 
 
 def retrieved(text="Уникальное содержимое базы"):
@@ -35,6 +35,7 @@ def grounded_completion(quote="содержимое"):
 
 class ConversationRAGTests(unittest.TestCase):
     def setUp(self):
+        patch_rag_preparation(self)
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.directory = Path(directory.name)
@@ -190,7 +191,7 @@ class ConversationRAGTests(unittest.TestCase):
         restored = ConversationService(self.directory, "test-token").get(result.id)
         self.assertEqual(restored.turns[-1].rag_context, retrieved())
 
-    @patch("llm_agent.service.rewrite_query")
+    @patch("llm_agent.service.prepare_turn")
     def test_disabled_rag_skips_rewrite_even_if_option_is_enabled(self, rewrite):
         result = self.service.send(self.conversation.id, "Вопрос", settings=ContextSettings(
             rag_enabled=False, rag_rewrite_enabled=True, rag_filter_enabled=True,
@@ -199,16 +200,22 @@ class ConversationRAGTests(unittest.TestCase):
         self.service.retriever.retrieve.assert_not_called()
         self.assertIsNone(result.turns[-1].rag_settings)
 
-    @patch("llm_agent.service.rewrite_query")
+    @patch("llm_agent.service.prepare_turn")
     def test_rewrite_is_separate_and_original_question_reaches_generator(self, rewrite):
-        rewrite.return_value = dict(query="Поисковая формулировка", status="success", reason=None,
-                                    elapsed_seconds=0.1, usage=None)
+        rewrite_result = dict(query="Поисковая формулировка", status="success", reason=None,
+                              elapsed_seconds=0.1, usage=None)
+        rewrite.side_effect = lambda *args, **kwargs: dict(
+            rag_preparation(*args, **kwargs), rewrite=rewrite_result,
+        )
         result = self.service.send(self.conversation.id, "Исходный вопрос", settings=ContextSettings(
             rag_enabled=True, rag_rewrite_enabled=True,
         ), options=RequestOptions(model="chosen-model"))
-        rewrite.assert_called_once_with("Исходный вопрос", "test-token", "chosen-model")
+        rewrite.assert_called_once()
+        self.assertEqual(rewrite.call_args.args[0], "Исходный вопрос")
+        self.assertEqual(rewrite.call_args.args[3:], ("test-token", "chosen-model"))
+        self.assertEqual(rewrite.call_args.kwargs, {"rewrite_enabled": True})
         self.service.retriever.retrieve.assert_called_once_with(
-            "Исходный вопрос", RAGSettings(rewrite_enabled=True), rewrite=rewrite.return_value,
+            "Исходный вопрос", RAGSettings(rewrite_enabled=True), rewrite=rewrite_result,
         )
         self.assertEqual(self.complete.call_args.kwargs["messages"][-1]["content"], "Исходный вопрос")
         self.assertEqual(result.turns[-1].user, "Исходный вопрос")
@@ -286,6 +293,7 @@ class ConversationRAGTests(unittest.TestCase):
 
 class RetrieverTests(unittest.TestCase):
     def setUp(self):
+        patch_rag_preparation(self)
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.path = Path(directory.name) / "index.sqlite3"
@@ -476,7 +484,8 @@ class RetrieverTests(unittest.TestCase):
         conversation = service.create()
         rewrite = dict(query="Поисковый запрос", status="success", reason=None, elapsed_seconds=0.1,
                        usage=dict(prompt_tokens=20, completion_tokens=5, total_tokens=25))
-        with patch("llm_agent.service.rewrite_query", return_value=rewrite), patch("llm_agent.agent.OpenAI") as client:
+        prepared = lambda *args, **kwargs: dict(rag_preparation(*args, **kwargs), rewrite=rewrite)
+        with patch("llm_agent.service.prepare_turn", side_effect=prepared), patch("llm_agent.agent.OpenAI") as client:
             complete = client.return_value.chat.completions.create
             complete.side_effect = RuntimeError("secret-api-detail")
             result = service.send(conversation.id, "Исходный вопрос", settings=ContextSettings(

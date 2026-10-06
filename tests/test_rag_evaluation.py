@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from llm_agent.rag import select_candidates
 from llm_agent.rag_evaluation import citation_metrics, dialogue_usage, evidence_metrics, load_questions, run_evaluation, summarize
-from tests.helpers import completion
+from tests.helpers import completion, patch_rag_preparation, rag_preparation
 
 
 class RAGEvaluationTests(unittest.TestCase):
@@ -21,6 +21,7 @@ class RAGEvaluationTests(unittest.TestCase):
         return response
 
     def setUp(self):
+        patch_rag_preparation(self)
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)
@@ -153,9 +154,11 @@ class RAGEvaluationTests(unittest.TestCase):
         self.assertEqual(result["manual_score_sum"], 2)
 
     def test_completed_answer_after_fallback_marks_comparison_incomplete(self):
-        with patch("llm_agent.agent.OpenAI") as openai, patch("llm_agent.service.rewrite_query") as rewrite:
+        with patch("llm_agent.agent.OpenAI") as openai, patch("llm_agent.service.prepare_turn") as rewrite:
             openai.return_value.chat.completions.create.return_value = self.grounded_completion()
-            rewrite.return_value = {"query": "Вопрос", "status": "fallback"}
+            rewrite.side_effect = lambda *args, **kwargs: dict(
+                rag_preparation(*args, **kwargs), rewrite={"query": "Вопрос", "status": "fallback"},
+            )
             report = run_evaluation(
                 questions_path=self.questions, index_path=self.index, output=self.output,
                 threshold=0.35, modes=["rewrite_filtered"], token="test",

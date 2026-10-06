@@ -182,7 +182,7 @@ class ProfileCliTests(unittest.TestCase):
         output = self.run_cli(
             "--profile-import", self.write_profile(), "--profile", self.profile.id, "--memory-show",
         )
-        self.assertEqual(set(json.loads(output)), {"short_term", "working", "long_term"})
+        self.assertEqual(set(json.loads(output)), {"short_term", "working", "long_term", "dialogue_task_memory"})
 
     def test_global_profile_operations_do_not_require_conversation(self):
         output = io.StringIO()

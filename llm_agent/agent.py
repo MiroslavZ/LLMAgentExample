@@ -119,6 +119,7 @@ class Agent:
         observations: ObservationReader | None = None,
         rag_context: dict | None = None,
         rag_threshold: float = 0.35,
+        dialogue_task_memory: dict | None = None,
     ) -> None:
         if strategy is not None and strategy not in SUPPORTED_STRATEGIES:
             raise ValueError(f"Неизвестная стратегия: {strategy}")
@@ -154,6 +155,7 @@ class Agent:
         self.observations = observations
         self.rag_context = deepcopy(rag_context)
         self.rag_threshold = rag_threshold
+        self.dialogue_task_memory = deepcopy(dialogue_task_memory)
         self.history = history if history is not None else (
             BranchHistoryManager(history_path, branch=branch) if strategy == "branch"
             else HistoryManager(history_path, strategy=self._strategy)
@@ -400,7 +402,12 @@ class Agent:
     ) -> RequestResult:
         answer = verdict.refusal(self.invariants, has_task=self.history.task_state is not None)
         if response_format != "text":
-            answer = json.dumps({"refused": True, "answer": answer}, ensure_ascii=False)
+            payload = {"refused": True, "answer": answer}
+            if self.rag_context is not None:
+                payload.update(sources=[], quotes=[])
+            answer = json.dumps(payload, ensure_ascii=False)
+        elif self.rag_context is not None:
+            answer += "\n\nИсточники: ответ заблокирован проверкой инвариантов."
         # Все полученные ответы API уже учтены. Локальный отказ стоит 0 токенов
         # и не является ответом модели с отсутствующей статистикой.
         self.history.add_refusal(user, answer, TokenUsage())
@@ -612,6 +619,12 @@ class Agent:
 
         if self.rag_context is not None:
             from .rag import RAG_INSTRUCTION, context_message
+            from .rag_dialogue import format_memory
+
+            if self.dialogue_task_memory is not None:
+                messages = [*messages[:-1], {
+                    "role": "user", "content": format_memory(self.dialogue_task_memory),
+                }, messages[-1]]
 
             messages = [
                 {"role": "system", "content": RAG_INSTRUCTION},

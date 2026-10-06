@@ -298,6 +298,7 @@ class ChatPage:
                 short_tab = ui.tab("Краткосрочная", icon="chat_bubble_outline")
                 working_tab = ui.tab("Рабочая", icon="work_outline")
                 long_tab = ui.tab("Долговременная", icon="inventory_2")
+                dialogue_tab = ui.tab("Память диалога", icon="psychology")
             with ui.tab_panels(tabs, value=short_tab).classes("w-full memory-panels"):
                 with ui.tab_panel(short_tab):
                     ui.label(
@@ -323,6 +324,14 @@ class ChatPage:
                     ).classes("memory-description")
                     self.long_memory_records = ui.column().classes("memory-records")
                     self.render_memory_editor("long_term")
+                with ui.tab_panel(dialogue_tab):
+                    ui.label(
+                        "В режиме RAG цель, уточнения, ограничения и термины сохраняются "
+                        "автоматически из ваших сообщений. Исправьте или отмените условие "
+                        "сообщением в чат. Для новой темы создайте новый диалог. "
+                        "Очистка рабочей памяти и начало задачи не очищают эту память."
+                    ).classes("memory-description")
+                    self.dialogue_memory_content = ui.column().classes("w-full")
         self.memory_dialog.on("hide", self.memory_dialog.delete)
         self.memory_dialog.open()
         self.refresh_memory()
@@ -343,7 +352,7 @@ class ChatPage:
         try:
             memory = self.service.get_memory(self._memory_conversation_id)
             memory_key = (self.snapshot.working_context, self.snapshot.turns, self.snapshot.settings,
-                          memory.working, memory.long_term, self.busy)
+                          memory.working, memory.long_term, self.snapshot.dialogue_task_memory, self.busy)
             self._memory_available = True
             self.memory_status.set_text("Дождитесь завершения запроса, чтобы редактировать память." if self.busy else "")
             if memory_key != self._memory_key:
@@ -356,6 +365,18 @@ class ChatPage:
                     ui.label("Факты и сжатое содержание стратегии относятся только к этому диалогу.").classes("memory-description")
                 self.render_memory_records(self.working_memory_records, "working", memory.working)
                 self.render_memory_records(self.long_memory_records, "long_term", memory.long_term)
+                self.dialogue_memory_content.clear()
+                with self.dialogue_memory_content:
+                    for field, label in (("goal", "Цель"), ("clarifications", "Уточнения"),
+                                         ("constraints", "Ограничения"), ("terms", "Термины")):
+                        ui.label(label).classes("font-semibold")
+                        value = self.snapshot.dialogue_task_memory[field]
+                        entries = ([value] if value else []) if field == "goal" else list(value.values())
+                        if not entries:
+                            ui.label("Пока нет записей").classes("memory-description")
+                        for entry in entries:
+                            ui.label(entry["value"]).classes("memory-value")
+                            ui.label(f"Ход {entry['turn']}: «{entry['quote']}»").classes("memory-description")
         except UI_ERRORS:
             self._memory_available = False
             self.memory_status.set_text("Не удалось прочитать память. Проверьте хранилище; редактирование временно недоступно.")

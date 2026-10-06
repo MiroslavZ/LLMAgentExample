@@ -207,11 +207,11 @@ def run_evaluation(
         "questions_file": str(questions_path.resolve()),
         "questions_sha256": index_digest(questions_path),
         "modes": modes, "rag_settings": asdict(parameters), "request_options": asdict(options),
-        "system_prompt": "", "isolation": "Fresh dialogue per question/mode; temporary empty stores; no MCP, profile, invariants or task memory",
+        "system_prompt": "", "isolation": "Fresh dialogue per question/mode; temporary empty stores; no MCP, profile, invariants or prior task memory. RAG dialogue preparation runs normally.",
         "manual_score_scale": "0: incorrect, 1: partial, 2: correct and complete; null: not reviewed",
         "semantic_support_scale": "full / partial / unsupported; null: not reviewed or not applicable. Review answer against quotes and their complete chunks, independently of literal matching.",
         "refusal_appropriate_scale": "true / false; null: not reviewed or not applicable. Review available context and expected evidence.",
-        "usage_notes": "request_usage contains final-response callbacks only; dialogue_usage totals include archived rejected/repair responses. Query rewrite usage is separate in rag_context.rewrite. Missing API usage cannot be reconstructed.",
+        "usage_notes": "request_usage contains final-response callbacks only; dialogue_usage totals include archived rejected/repair responses. Dialogue preparation usage (including rewrite) is separate in rag_preparation and not duplicated in rag_context.rewrite. Missing API usage cannot be reconstructed.",
         "runs": [],
     }
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -262,6 +262,7 @@ def run_evaluation(
                             conversation_id=conversation.id, status=turn.status, answer=turn.answer,
                             error=turn.error, rag_context=context, elapsed_seconds=turn.elapsed_seconds,
                             rag_answer=turn.rag_answer,
+                            rag_preparation=turn.rag_preparation,
                             dialogue_usage=dialogue_usage(result.working_context),
                         )
                     row["citation_metrics"] = citation_metrics(row["rag_answer"], context)

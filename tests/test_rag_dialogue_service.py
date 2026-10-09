@@ -11,6 +11,7 @@ from llm_agent.models import ContextSettings
 from llm_agent.rag import RAGError
 from llm_agent.rag_dialogue import empty_memory
 from llm_agent.service import ConversationService
+from tests.helpers import create_selected_conversation
 from llm_agent.storage import ConversationStorageError
 from tests.test_rag import grounded_completion, retrieved
 
@@ -24,7 +25,7 @@ class DialogueServiceTests(unittest.TestCase):
         self.retriever = Mock()
         self.retriever.retrieve.return_value = retrieved()
         self.service.retriever = self.retriever
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.prepare = self.enterContext(patch("llm_agent.service.prepare_turn"))
         self.prepare.side_effect = self.prepared
         self.client = self.enterContext(patch("llm_agent.agent.OpenAI"))
@@ -32,7 +33,7 @@ class DialogueServiceTests(unittest.TestCase):
         self.complete.return_value = grounded_completion()
 
     @staticmethod
-    def prepared(question, memory, turns, token, model, *, rewrite_enabled):
+    def prepared(question, memory, turns, token, model, *, rewrite_enabled, **kwargs):
         memory = deepcopy(memory)
         if len(turns) == 1:
             memory["goal"] = {"value": question, "quote": question, "turn": 1}
@@ -58,7 +59,7 @@ class DialogueServiceTests(unittest.TestCase):
             self.assertEqual(len(result.turns), number + 1)
         self.assertEqual(self.retriever.retrieve.call_count, 13)
         self.assertEqual(self.service.store.load(result.id), result)
-        self.assertEqual(self.service.create().dialogue_task_memory, empty_memory())
+        self.assertEqual(create_selected_conversation(self.service).dialogue_task_memory, empty_memory())
 
     def test_memory_saved_before_failed_search(self):
         self.retriever.retrieve.side_effect = RAGError("Индекс недоступен")

@@ -1,0 +1,86 @@
+{
+  "created_at": "2026-10-08T20:11:32.301464+00:00",
+  "runs": [
+    {
+      "user": "Запомни кодовое слово: кедр. Ответь только этим словом.",
+      "options": {
+        "meta_prompt": false,
+        "temperature": 0,
+        "max_tokens": 256,
+        "model": null,
+        "stop_sequences": null,
+        "response_format": "text"
+      },
+      "answer": "кедр",
+      "meta_prompt": null,
+      "status": "completed",
+      "error": null,
+      "created_at": "2026-10-08T20:11:32.316931+00:00",
+      "elapsed_seconds": 1.6616368999966653,
+      "memory_updated": false,
+      "tool_calls": [],
+      "rag_enabled": false,
+      "rag_context": null,
+      "rag_settings": null,
+      "rag_answer": null,
+      "rag_preparation": null,
+      "model_id": "gemma-4-26b-a4b-it-qat",
+      "model_name": "gemma-4-26b-a4b-it-qat",
+      "model_base_url": "http://192.168.1.188:1234/v1"
+    },
+    {
+      "user": "Какое кодовое слово я назвал? Ответь одним словом.",
+      "options": {
+        "meta_prompt": false,
+        "temperature": 0,
+        "max_tokens": 256,
+        "model": null,
+        "stop_sequences": null,
+        "response_format": "text"
+      },
+      "answer": "кедр",
+      "meta_prompt": null,
+      "status": "completed",
+      "error": null,
+      "created_at": "2026-10-08T20:11:34.000824+00:00",
+      "elapsed_seconds": 1.5009457000014663,
+      "memory_updated": false,
+      "tool_calls": [],
+      "rag_enabled": false,
+      "rag_context": null,
+      "rag_settings": null,
+      "rag_answer": null,
+      "rag_preparation": null,
+      "model_id": "deepseek-chat",
+      "model_name": "deepseek-chat",
+      "model_base_url": "https://api.deepseek.com/v1"
+    },
+    {
+      "user": "Повтори наше кодовое слово. Одно слово.",
+      "options": {
+        "meta_prompt": false,
+        "temperature": 0,
+        "max_tokens": 256,
+        "model": null,
+        "stop_sequences": null,
+        "response_format": "text"
+      },
+      "answer": "кедр",
+      "meta_prompt": null,
+      "status": "completed",
+      "error": null,
+      "created_at": "2026-10-08T20:11:35.522451+00:00",
+      "elapsed_seconds": 1.8629631000003428,
+      "memory_updated": false,
+      "tool_calls": [],
+      "rag_enabled": false,
+      "rag_context": null,
+      "rag_settings": null,
+      "rag_answer": null,
+      "rag_preparation": null,
+      "model_id": "gemma-4-26b-a4b-it-qat",
+      "model_name": "gemma-4-26b-a4b-it-qat",
+      "model_base_url": "http://192.168.1.188:1234/v1"
+    }
+  ]
+}

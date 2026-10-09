@@ -1,0 +1,91 @@
+{
+  "created_at": "2026-10-08T20:02:41.123447+00:00",
+  "base_url": "http://192.168.1.188:1234/v1",
+  "model": "gemma-4-26b-a4b-it-qat",
+  "runs": [
+    {
+      "difficulty": "simple",
+      "user": "Сколько будет 17 + 25? Ответь только числом.",
+      "options": {
+        "meta_prompt": false,
+        "temperature": 0,
+        "max_tokens": 1400,
+        "model": null,
+        "stop_sequences": null,
+        "response_format": "text"
+      },
+      "answer": "42",
+      "meta_prompt": null,
+      "status": "completed",
+      "error": null,
+      "created_at": "2026-10-08T20:02:41.155074+00:00",
+      "elapsed_seconds": 2.2881626000016695,
+      "memory_updated": false,
+      "tool_calls": [],
+      "rag_enabled": false,
+      "rag_context": null,
+      "rag_settings": null,
+      "rag_answer": null,
+      "rag_preparation": null,
+      "model_id": "gemma-4-26b-a4b-it-qat",
+      "model_name": "gemma-4-26b-a4b-it-qat",
+      "model_base_url": "http://192.168.1.188:1234/v1"
+    },
+    {
+      "difficulty": "medium",
+      "user": "Объясни на русском различие списка и кортежа в Python. Дай по одному примеру использования. Не более 100 слов.",
+      "options": {
+        "meta_prompt": false,
+        "temperature": 0,
+        "max_tokens": 1400,
+        "model": null,
+        "stop_sequences": null,
+        "response_format": "text"
+      },
+      "answer": "Главное отличие — в **изменяемости** (mutability).\n\n**Список (`list`)** — это изменяемый тип данных. Вы можете добавлять, удалять или менять его элементы после создания. Используется для коллекций, которые будут дополняться.\n*Пример:* `tasks = [\"купить хлеб\", \"помыть пол\"]` (можно добавить новую задачу).\n\n**Кортеж (`tuple`)** — это неизменяемый тип данных. После создания его содержимое нельзя изменить. Это делает кортежи быстрее и безопаснее для хранения констант.\n*Пример:* `point = (10, 20)` (координаты точки не должны меняться в процессе работы).",
+      "meta_prompt": null,
+      "status": "completed",
+      "error": null,
+      "created_at": "2026-10-08T20:02:43.464170+00:00",
+      "elapsed_seconds": 7.540367599998717,
+      "memory_updated": false,
+      "tool_calls": [],
+      "rag_enabled": false,
+      "rag_context": null,
+      "rag_settings": null,
+      "rag_answer": null,
+      "rag_preparation": null,
+      "model_id": "gemma-4-26b-a4b-it-qat",
+      "model_name": "gemma-4-26b-a4b-it-qat",
+      "model_base_url": "http://192.168.1.188:1234/v1"
+    },
+    {
+      "difficulty": "complex",
+      "user": "Напиши функцию Python unique_in_order(items), которая убирает дубликаты, сохраняя порядок. Элементы могут быть словарями и списками. Не изменяй вход. Приведи 3 assert-теста, включая пустой вход и словари, и укажи сложность алгоритма. Отвечай кратко.",
+      "options": {
+        "meta_prompt": false,
+        "temperature": 0,
+        "max_tokens": 1400,
+        "model": null,
+        "stop_sequences": null,
+        "response_format": "text"
+      },
+      "answer": "```python\ndef unique_in_order(items):\n    result = []\n    for item in items:\n        if item not in result:\n            result.append(item)\n    return result\n\n# Тесты\nassert unique_in_order([]) == []\nassert unique_in_order([{'a': 1}, {'b': 2}, {'a': 1}]) == [{'a': 1}, {'b': 2}]\nassert unique_in_order([1, [1, 2], [1, 2], 'a', 'a']) == [1, [1, 2], 'a']\n\n```\n\n**Сложность:**\n* **Временная:** $O(n^2)$, так как поиск `item not in result` в списке занимает $O(n)$ и выполняется $n$ раз.\n* **Пространственная:** $O(n)$ для хранения результирующего списка.",
+      "meta_prompt": null,
+      "status": "completed",
+      "error": null,
+      "created_at": "2026-10-08T20:02:51.027825+00:00",
+      "elapsed_seconds": 9.794490599997516,
+      "memory_updated": false,
+      "tool_calls": [],
+      "rag_enabled": false,
+      "rag_context": null,
+      "rag_settings": null,
+      "rag_answer": null,
+      "rag_preparation": null,
+      "model_id": "gemma-4-26b-a4b-it-qat",
+      "model_name": "gemma-4-26b-a4b-it-qat",
+      "model_base_url": "http://192.168.1.188:1234/v1"
+    }
+  ]
+}

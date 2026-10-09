@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from llm_agent.models import ContextSettings, RequestOptions
 from llm_agent.service import ConversationService
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation, register_model
 
 
 class ConversationOptionsTests(unittest.TestCase):
@@ -17,12 +17,13 @@ class ConversationOptionsTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.directory = Path(directory.name)
         self.service = ConversationService(self.directory, "test-token")
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         client = self.enterContext(patch("llm_agent.agent.OpenAI")).return_value
         self.create_completion = client.chat.completions.create
         self.create_completion.return_value = completion()
 
     def test_options_reach_both_request_modes_and_survive_restart(self):
+        register_model(self.service, model_id="custom-model")
         for meta_prompt in (False, True):
             with self.subTest(meta_prompt=meta_prompt):
                 options = RequestOptions(

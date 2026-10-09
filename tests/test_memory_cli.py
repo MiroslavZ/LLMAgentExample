@@ -11,7 +11,7 @@ from rich.console import Console
 from llm_agent.cli import main, parse_args, run
 from llm_agent.service import ConversationService
 from llm_agent.memory import MemoryStore
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation
 
 
 class MemoryCliTests(unittest.TestCase):
@@ -20,7 +20,7 @@ class MemoryCliTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.data_dir = Path(directory.name) / "conversations"
         self.service = ConversationService(self.data_dir, token=None)
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.path = self.service.store.path(self.conversation.id)
         self.database = self.data_dir / "memory.sqlite3"
         client = patch("llm_agent.agent.OpenAI")
@@ -70,7 +70,7 @@ class MemoryCliTests(unittest.TestCase):
         self.client.assert_not_called()
 
     def test_working_memory_is_local_and_long_term_is_shared_between_conversations(self):
-        other_history = self.service.store.path(self.service.create().id)
+        other_history = self.service.store.path(create_selected_conversation(self.service).id)
         self.run_cli("--memory-set", "working", "goal", "Доклад")
         self.run_cli("--memory-set", "long_term", "database", "SQLite")
         self.run_cli("--memory-set", "working", "goal", "Письмо", history=other_history)
@@ -115,7 +115,7 @@ class MemoryCliTests(unittest.TestCase):
     def test_shared_memory_is_loaded_for_next_request_in_another_dialogue(self):
         self.run_cli("--memory-set", "long_term", "style", "Отвечать кратко")
         with patch.dict("os.environ", {"API_KEY": "test"}):
-            self.run_cli("--user", "Объясни SQLite", history=self.service.store.path(self.service.create().id))
+            self.run_cli("--user", "Объясни SQLite", history=self.service.store.path(create_selected_conversation(self.service).id))
         sent = json.dumps(self.create.call_args.kwargs["messages"], ensure_ascii=False)
         self.assertIn("Отвечать кратко", sent)
 

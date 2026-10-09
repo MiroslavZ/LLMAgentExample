@@ -10,7 +10,7 @@ from unittest.mock import patch
 from llm_agent.history import DialogueUsage, HistoryManager
 from llm_agent.models import ContextSettings, RequestOptions, Turn
 from llm_agent.service import ConversationBusyError, ConversationService, ConversationStorageError
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation
 
 
 def reply(content):
@@ -35,7 +35,7 @@ class ConversationTests(unittest.TestCase):
         self.create_completion = self.client.chat.completions.create
         self.create_completion.return_value = reply("Ответ")
         self.service = ConversationService(self.directory, "test-secret")
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
 
     def send(self, user="Вопрос", **kwargs):
         return self.service.send(self.conversation.id, user, **kwargs)
@@ -242,13 +242,14 @@ class ConversationTests(unittest.TestCase):
         self.assertEqual(snapshot.turns, [])
         self.openai.assert_not_called()
 
-    def test_missing_api_key_is_safe_and_persisted(self):
+    def test_missing_model_does_not_start_turn_or_call_api(self):
         service = ConversationService(self.directory, None)
-        self.assertFalse(service.token_available)
-        snapshot = service.send(self.conversation.id, "Вопрос")
-        self.assertEqual(snapshot.turns[-1].status, "error")
-        self.assertIn("API_KEY", snapshot.turns[-1].error)
-        self.assertTrue(snapshot.started)
+        conversation = service.create()
+        with self.assertRaisesRegex(ValueError, "Выберите модель"):
+            service.send(conversation.id, "Вопрос")
+        snapshot = service.get(conversation.id)
+        self.assertEqual(snapshot.turns, [])
+        self.assertFalse(snapshot.started)
         self.openai.assert_not_called()
 
     def test_restart_marks_unfinished_turn_interrupted_and_keeps_meta(self):
@@ -333,7 +334,7 @@ class ConversationTests(unittest.TestCase):
     def test_concurrent_mutations_rejected_reads_and_other_dialogues_work(self):
         entered = threading.Event()
         release = threading.Event()
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
 
         def respond(**kwargs):
             if kwargs["messages"][-1]["content"] == "Ожидание":

@@ -46,7 +46,7 @@ class RAGDialogueEvaluationTests(unittest.TestCase):
         self.scenarios_path.write_text(json.dumps(self.scenarios, ensure_ascii=False), encoding="utf-8")
 
     @staticmethod
-    def prepare(question, memory, turns, token, model, *, rewrite_enabled):
+    def prepare(question, memory, turns, token, model, *, rewrite_enabled, **kwargs):
         result = rag_preparation(question, memory, turns, token, model, rewrite_enabled=rewrite_enabled)
         if not result["memory"]["goal"]:
             result["memory"]["goal"] = {"value": question, "quote": question, "turn": len(turns)}
@@ -88,6 +88,22 @@ class RAGDialogueEvaluationTests(unittest.TestCase):
             self.assertNotIn("SECRET_EXPECTED_CHECK", json.dumps(call.kwargs["messages"]))
         self.assertEqual(json.loads(self.output.read_text(encoding="utf-8")), report)
         self.assertTrue(self.output.with_suffix(".data").is_dir())
+
+    def test_local_model_without_token_survives_scenario_restarts(self):
+        base_url = "http://127.0.0.1:1234/v1"
+        report = run_evaluation(
+            scenarios_path=self.scenarios_path, index_path=self.index, output=self.output,
+            base_url=base_url, model="gemma",
+        )
+        self.assertEqual(report["status"], "completed")
+        self.assertEqual(report["base_url"], base_url)
+        self.assertEqual(self.openai.call_count, 26)
+        for call in self.openai.call_args_list:
+            self.assertEqual(call.kwargs["base_url"], base_url)
+            self.assertEqual(call.kwargs["api_key"], "local-no-auth")
+        self.assertTrue(all(call.kwargs["model"] == "gemma" for call in self.generate.call_args_list))
+        self.assertEqual(len(report["restarts"]), 2)
+        self.assertTrue(all(item["memory_preserved"] and item["turns_preserved"] for item in report["restarts"]))
 
     def test_unknown_source_rejected_before_network_and_writes(self):
         self.scenarios[0]["turns"][0]["expected_sources"] = ["missing.md"]

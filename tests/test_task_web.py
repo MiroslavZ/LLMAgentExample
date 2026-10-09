@@ -15,7 +15,7 @@ from llm_agent.service import ConversationService, ConversationStorageError
 from llm_agent.task_state import CONTINUE_TASK, TaskStage, TaskState
 from llm_agent.web.jobs import RequestRunner
 from llm_agent.web.page import ChatPage
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation
 
 
 class TaskPageTests(unittest.IsolatedAsyncioTestCase):
@@ -24,7 +24,7 @@ class TaskPageTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(directory.cleanup)
         self.directory = Path(directory.name)
         self.service = ConversationService(self.directory, token="test-token")
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.runner = RequestRunner(self.service)
         self.enterContext(patch("nicegui.background_tasks.create_or_defer",
                                 side_effect=lambda coroutine, **_: coroutine.close()))
@@ -190,6 +190,7 @@ class TaskPageTests(unittest.IsolatedAsyncioTestCase):
     async def test_approve_plan_without_api_preserves_draft_and_survives_reload(self):
         proposed = TaskState("Доклад", plan=("Введение", "Примеры"))
         self.save_task(proposed)
+        self.service.select_model(self.conversation.id, None)
         with self.client:
             page = self.build_page(token_available=False)
             page.user_input.set_value("Сохранить черновик")
@@ -301,7 +302,7 @@ class TaskPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page.user_input.value, "Обсудить результат")
 
     async def test_switching_dialogues_preserves_separate_task_title_drafts(self):
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         with self.client:
             page = self.build_page()
             panel = page.task_panel
@@ -333,7 +334,8 @@ class TaskPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(panel.new_task.visible)
         self.notify.assert_called_with("Не удалось сохранить состояние задачи.", type="negative")
 
-    async def test_local_controls_work_without_api_token(self):
+    async def test_local_controls_work_without_selected_model(self):
+        self.service.select_model(self.conversation.id, None)
         with self.client:
             page = self.build_page(token_available=False)
             panel = page.task_panel

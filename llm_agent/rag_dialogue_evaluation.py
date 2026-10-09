@@ -8,13 +8,15 @@ import json
 import os
 from pathlib import Path
 import sys
+from uuid import NAMESPACE_URL, uuid5
 
-from .agent import DEFAULT_MODEL
+from .agent import BASE_URL, DEFAULT_MODEL
 from .cli import ENV_PATH, load_env
 from .indexing.store import load_index
 from .models import ContextSettings, RequestOptions, utc_now
+from .llm_models import LLMModel
 from .rag import ROOT, Retriever
-from .rag_evaluation import citation_metrics, ensure_fixed_index, index_digest, normalize
+from .rag_evaluation import citation_metrics, ensure_fixed_index, evaluation_token, index_digest, normalize
 from .service import ConversationService
 
 
@@ -78,7 +80,8 @@ def write_report(path: Path, report: dict) -> None:
 
 def run_evaluation(*, scenarios_path: Path, index_path: Path, output: Path,
                    threshold: float = 0.35, token: str | None = None, cache: str | None = None,
-                   model: str = DEFAULT_MODEL, max_tokens: int = 2500) -> dict:
+                   model: str = DEFAULT_MODEL, base_url: str = BASE_URL,
+                   max_tokens: int = 2500) -> dict:
     """Один диалог на сценарий, один send на ход; контрольные ответы не уходят LLM."""
     settings = ContextSettings(strategy="window", window_size=2, rag_enabled=True,
                                rag_rewrite_enabled=True, rag_filter_enabled=True,
@@ -86,6 +89,10 @@ def run_evaluation(*, scenarios_path: Path, index_path: Path, output: Path,
     options = RequestOptions(model=model, temperature=0.0, max_tokens=max_tokens)
     settings.validate()
     options.validate()
+    evaluation_model = LLMModel(
+        uuid5(NAMESPACE_URL, base_url.rstrip("/") + "\n" + model).hex,
+        model, model, base_url, token or "",
+    )
     output, index_path = output.resolve(), index_path.resolve()
     data_dir = output.with_suffix(".data")
     if output.exists() or data_dir.exists():
@@ -105,6 +112,7 @@ def run_evaluation(*, scenarios_path: Path, index_path: Path, output: Path,
             for doc in documents if normalize(turn["question"]) in normalize(doc.text)
         ],
         "settings": asdict(settings), "request_options": asdict(options),
+        "base_url": evaluation_model.base_url,
         "data_dir": str(data_dir), "restart_after_turn": 7,
         "isolation": "Separate stores per scenario; no user profiles, MCP, manual memory or invariants.",
         "manual_review": "null means not reviewed. semantic_support: full/partial/unsupported; goal_retained, memory_correct, refusal_appropriate: boolean. Review checks against full answers and memory; citation metrics alone do not prove semantic quality.",
@@ -116,6 +124,7 @@ def run_evaluation(*, scenarios_path: Path, index_path: Path, output: Path,
 
     def create_service(directory: Path) -> ConversationService:
         service = ConversationService(directory / "conversations", token, invariants_path=directory / "invariants.json")
+        service.models.save(evaluation_model)
         service.retriever = retriever
         return service
 
@@ -184,16 +193,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--threshold", type=float, default=0.35)
     parser.add_argument("--cache-dir", default=None)
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--base-url", default=BASE_URL, help="Адрес OpenAI-совместимого API")
+    parser.add_argument("--model-token-env", help="Переменная с токеном; API_KEY по умолчанию только для DeepSeek")
     parser.add_argument("--max-tokens", type=int, default=2500)
     args = parser.parse_args(argv)
     try:
-        token = os.environ.get("API_KEY", "").strip()
-        if not token:
-            raise ValueError("Для сценарного прогона требуется API_KEY в окружении или .env")
+        token = evaluation_token(args.base_url, args.model_token_env)
         report = run_evaluation(scenarios_path=args.scenarios,
                                 index_path=args.index if args.index.is_absolute() else ROOT / args.index,
                                 output=args.output, threshold=args.threshold, token=token,
-                                cache=args.cache_dir, model=args.model, max_tokens=args.max_tokens)
+                                cache=args.cache_dir, model=args.model, base_url=args.base_url,
+                                max_tokens=args.max_tokens)
     except (ValueError, OSError) as error:
         print(str(error), file=sys.stderr)
         return 1

@@ -131,6 +131,9 @@ class Turn:
     rag_settings: RAGSettings | None = None
     rag_answer: dict | None = None
     rag_preparation: dict | None = None
+    model_id: str | None = None
+    model_name: str | None = None
+    model_base_url: str | None = None
 
 
 @dataclass
@@ -145,6 +148,7 @@ class Conversation:
     # а не явная рабочая память задачи (она хранится в MemoryStore).
     working_context: object = field(default_factory=list)
     dialogue_task_memory: dict = field(default_factory=empty_memory)
+    selected_model_id: str | None = None
     created_at: str = field(default_factory=utc_now)
     updated_at: str = field(default_factory=utc_now)
 

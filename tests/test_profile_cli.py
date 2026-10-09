@@ -12,7 +12,7 @@ from llm_agent.agent import Agent
 from llm_agent.cli import main, parse_args, run
 from llm_agent.service import ConversationService
 from llm_agent.profile import ProfileStore, UserProfile
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation
 
 
 class ProfileCliTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class ProfileCliTests(unittest.TestCase):
         self.directory = Path(directory.name)
         self.data_dir = self.directory / "conversations"
         self.service = ConversationService(self.data_dir, token=None)
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.history = self.service.store.path(self.conversation.id)
         self.memory_db = self.data_dir / "memory.sqlite3"
         self.profiles_db = self.data_dir / "profiles.sqlite3"
@@ -115,14 +115,14 @@ class ProfileCliTests(unittest.TestCase):
         self.assertEqual(self.selected(), updated)
 
     def test_selections_are_independent_for_histories(self):
-        other_history = self.service.store.path(self.service.create().id)
+        other_history = self.service.store.path(create_selected_conversation(self.service).id)
         self.run_cli("--profile-import", self.write_profile(), "--profile", self.profile.id)
         self.assertIsNone(json.loads(self.run_cli("--profile-show", history=other_history)))
         self.assertEqual(self.selected(), self.profile)
         self.assertIsNone(self.selected(history=other_history))
 
     def test_delete_unselects_profile_in_all_histories(self):
-        other_history = self.service.store.path(self.service.create().id)
+        other_history = self.service.store.path(create_selected_conversation(self.service).id)
         self.run_cli("--profile-import", self.write_profile(), "--profile", self.profile.id)
         self.run_cli("--profile", self.profile.id, history=other_history)
         self.run_cli("--profile-delete", self.profile.id)

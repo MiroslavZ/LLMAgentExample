@@ -23,7 +23,7 @@ from llm_agent.memory import (
 from llm_agent.models import ContextSettings, RequestOptions, Turn
 from llm_agent.service import ConversationService
 from llm_agent.storage import ConversationBusyError, ConversationStorageError
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation
 
 
 def response_with_text(text):
@@ -309,7 +309,7 @@ class ServiceMemoryTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.directory = Path(directory.name)
         self.service = ConversationService(self.directory, token="тестовый-ключ")
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.create = self.enterContext(patch("llm_agent.agent.OpenAI")).return_value.chat.completions.create
         self.create.return_value = completion()
 
@@ -321,7 +321,7 @@ class ServiceMemoryTests(unittest.TestCase):
 
     def test_new_conversation_reset_delete_and_restart_keep_shared_memory(self):
         self.remember_both_layers()
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         self.service.remember_memory(other.id, "working", "цель", "Другая задача")
         restarted = ConversationService(self.directory, token="тестовый-ключ")
         self.assertEqual(restarted.get_memory(self.conversation.id).working, {"цель": "Создать агента"})
@@ -360,7 +360,7 @@ class ServiceMemoryTests(unittest.TestCase):
 
     def test_service_forget_updates_shared_memory_without_affecting_working(self):
         self.remember_both_layers()
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         self.service.forget_memory(other.id, "long_term", "язык")
         self.assertEqual(self.service.get_memory(self.conversation.id).long_term, {})
         self.assertEqual(self.service.get_memory(self.conversation.id).working, {"цель": "Создать агента"})

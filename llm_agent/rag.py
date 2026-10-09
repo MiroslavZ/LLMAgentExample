@@ -9,6 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from openai import OpenAI
+from .llm_client import connection_options
 
 from .indexing.embeddings import Embedder, embedding_options
 from .indexing.store import load_index, search
@@ -37,14 +38,15 @@ REWRITE_INSTRUCTION = (
 )
 
 
-def rewrite_query(question: str, token: str, model: str) -> dict:
+def rewrite_query(question: str, token: str, model: str, *,
+                  base_url: str | None = None, timeout: float = 15.0) -> dict:
     """Один ограниченный служебный вызов без истории, памяти и инструментов."""
     from .agent import BASE_URL
 
     result = dict(query=question, status="fallback", reason=None, elapsed_seconds=0.0, usage=None)
     started = time.perf_counter()
     try:
-        with OpenAI(api_key=token, base_url=BASE_URL, timeout=15.0, max_retries=0) as client:
+        with OpenAI(**connection_options(base_url or BASE_URL, token), timeout=timeout, max_retries=0) as client:
             response = client.chat.completions.create(
                 model=model, temperature=0, max_tokens=200,
                 messages=[{"role": "system", "content": REWRITE_INSTRUCTION},

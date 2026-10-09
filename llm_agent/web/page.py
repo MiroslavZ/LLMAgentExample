@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from nicegui import ui
 
+from ..llm_models import ModelStorageError
 from ..memory import MemoryStorageError
 from ..models import ContextSettings, Conversation, RequestOptions
 from ..profile import ProfileStorageError
@@ -15,11 +16,12 @@ from .components import STRATEGIES, STRATEGY_HELP, empty_chat, render_turn
 from .jobs import RequestRunner
 from .invariants import InvariantPanel
 from .mcp import MCPPanel
+from .models import ModelsPanel
 from .profiles import ProfilePanel
 from .tasks import TaskPanel
 
 UI_ERRORS = (ValueError, OSError, KeyError, ConversationBusyError, ConversationStorageError,
-             MemoryStorageError, ProfileStorageError)
+             MemoryStorageError, ProfileStorageError, ModelStorageError)
 
 
 @dataclass
@@ -40,11 +42,10 @@ class Draft:
 class ChatPage:
     def __init__(
         self, service: ConversationService, runner: RequestRunner, *,
-        token_available: bool, conversation_id: str | None = None,
+        token_available: bool | None = None, conversation_id: str | None = None,
     ) -> None:
         self.service = service
         self.runner = runner
-        self.token_available = token_available
         self.conversation_id = conversation_id
         self.snapshot: Conversation | None = None
         self.drafts: dict[str, Draft] = {}
@@ -54,6 +55,10 @@ class ChatPage:
         self._composer_key: object = None
         self._turns_key: object = None
         self._banner_key: object = None
+        self._model_key: object = None
+        self._updating_model = False
+        self._model_ids: set[str] = set()
+        self._model_error = ""
         self._near_bottom = True
         self.memory_dialog: ui.dialog | None = None
         self._memory_key: object = None
@@ -62,12 +67,14 @@ class ChatPage:
         self.memory_editors: dict[str, MemoryEditor] = {}
         self.invariant_panel = InvariantPanel(service, on_save=self.refresh)
         self.mcp_panel = MCPPanel(service.mcp_servers)
+        self.models_panel = ModelsPanel(service.models, on_change=self.refresh)
         self.profile_panel = ProfilePanel(
             service, conversation_id=lambda: self.conversation_id, busy=lambda: self.busy,
         )
         self.task_panel = TaskPanel(
             service, snapshot=lambda: self.snapshot, busy=lambda: self.busy,
-            token_available=token_available, refresh_page=self.refresh, continue_task=self.continue_task,
+            model_available=lambda: self.model_available,
+            refresh_page=self.refresh, continue_task=self.continue_task,
         )
 
     def build(self) -> None:
@@ -105,7 +112,13 @@ class ChatPage:
                     with ui.column().classes("header-text"):
                         self.title = ui.label().classes("chat-title")
                         self.subtitle = ui.label().classes("chat-subtitle")
-                    ui.badge("DeepSeek", color="white", text_color="grey-8").props("outline").classes("model-badge")
+                    with ui.row().classes("model-controls"):
+                        self.model_selector = ui.select(
+                            {}, label="Модель диалога", on_change=self.select_model,
+                        ).props('outlined dense clearable aria-label="Модель диалога"').classes("model-selector")
+                        ui.button(icon="view_in_ar", on_click=self.models_panel.open).props(
+                            'flat round aria-label="Менеджер моделей"'
+                        ).tooltip("Менеджер моделей")
                     ui.button(icon="terminal", on_click=self.show_cli_command).props(
                         'flat round aria-label="Продолжить в CLI"'
                     ).tooltip("Продолжить в CLI")
@@ -126,6 +139,7 @@ class ChatPage:
                     self.transcript = ui.column().classes("transcript")
                 self.composer = ui.column().classes("composer-area")
                 self.mcp_panel.build()
+                self.models_panel.build()
 
             with ui.element("aside").classes("settings-panel") as self.settings_panel:
                 with ui.row().classes("settings-heading"):
@@ -147,6 +161,48 @@ class ChatPage:
     @property
     def busy(self) -> bool:
         return bool(self.snapshot and (self.snapshot.busy or self.runner.is_running(self.snapshot.id)))
+
+    @property
+    def model_available(self) -> bool:
+        return bool(self.snapshot and self.snapshot.selected_model_id in self._model_ids and not self._model_error)
+
+    def refresh_models(self) -> None:
+        try:
+            models = self.service.models.list()
+            self._model_ids = {model.id for model in models}
+            self._model_error = ""
+            options = {model.id: model.name for model in models}
+        except ModelStorageError as error:
+            self._model_ids = set()
+            self._model_error = str(error)
+            options = {}
+        selected_id = self.snapshot.selected_model_id if self.model_available else None
+        key = (options, selected_id, self.busy, self._model_error)
+        if key != self._model_key:
+            self._model_key = key
+            self._updating_model = True
+            try:
+                self.model_selector.set_options(options, value=selected_id)
+                self.model_selector.set_enabled(not self.busy and not self._model_error and bool(options))
+            finally:
+                self._updating_model = False
+        if self.models_panel.dialog and self.models_panel.dialog.value:
+            self.models_panel.refresh()
+
+    def select_model(self) -> None:
+        if self._updating_model or self.snapshot is None:
+            return
+        if self.busy:
+            self._model_key = None
+            self.refresh_models()
+            return
+        try:
+            self.service.select_model(self.snapshot.id, self.model_selector.value)
+        except UI_ERRORS as error:
+            ui.notify(str(error) if isinstance(error, (ValueError, ConversationBusyError))
+                      else "Не удалось выбрать модель.", type="negative")
+        self._model_key = None
+        self.refresh()
 
     def remember_draft(self) -> None:
         if self.snapshot and hasattr(self, "user_input"):
@@ -255,12 +311,15 @@ class ChatPage:
                 self._settings_key = settings_key
                 self.render_settings()
             self.invariant_panel.refresh()
-            composer_key = (current.id, current.started, self.busy, current.task_state, self.invariant_panel.available)
+            self.refresh_models()
+            composer_key = (current.id, current.started, self.busy, current.task_state,
+                            self.invariant_panel.available, self.model_available)
             if force or composer_key != self._composer_key:
                 self._composer_key = composer_key
                 self.render_composer()
             error = self.runner.errors.get(current.id)
-            banner_key = (error, tuple(self.service.storage_errors))
+            banner_key = (error, tuple(self.service.storage_errors), self.model_available,
+                          self._model_error, current.selected_model_id, bool(self._model_ids))
             if force or banner_key != self._banner_key:
                 self._banner_key = banner_key
                 self.render_banner(error)
@@ -456,8 +515,18 @@ class ChatPage:
     def render_banner(self, error: str | None) -> None:
         self.banner.clear()
         with self.banner:
-            if not self.token_available:
-                ui.label("Для отправки сообщений задайте API_KEY в .env и перезапустите приложение.").classes("info-banner")
+            if self._model_error:
+                ui.label(self._model_error).classes("warning-banner")
+            if not self.model_available:
+                message = (
+                    "Модель этого диалога удалена или недоступна. Выберите другую модель."
+                    if self.snapshot.selected_model_id else
+                    "Выберите модель в шапке диалога." if self._model_ids else
+                    "Добавьте модель через менеджер моделей, затем выберите её для диалога."
+                )
+                with ui.row().classes("info-banner items-center gap-2"):
+                    ui.label(message)
+                    ui.button("Менеджер моделей", on_click=self.models_panel.open).props("flat dense no-caps")
             for message in self.service.storage_errors:
                 ui.label(message).classes("warning-banner")
             if error:
@@ -538,7 +607,7 @@ class ChatPage:
         if self.system_input:
             self.system_input.set_enabled(not self.busy)
         self.send_button.set_enabled(
-            not self.busy and not paused and self.token_available and self.invariant_panel.available,
+            not self.busy and not paused and self.model_available and self.invariant_panel.available,
         )
         if self.busy:
             self.send_button.props("loading")
@@ -661,7 +730,13 @@ class ChatPage:
             ui.notify(str(error) if isinstance(error, (ValueError, ConversationBusyError)) else "Не удалось сохранить настройки.", type="negative")
 
     def send(self) -> None:
-        if self.busy or not self.token_available:
+        if self.busy:
+            return
+        self.refresh_models()
+        if not self.model_available:
+            ui.notify("Добавьте и выберите модель для этого диалога.", type="warning")
+            self.refresh()
+            self.models_panel.open()
             return
         self.invariant_panel.refresh()
         if not self.invariant_panel.available:
@@ -699,7 +774,12 @@ class ChatPage:
 
     def continue_task(self) -> None:
         task = self.snapshot.task_state
-        if self.busy or not self.token_available or task is None or task.stage == "done" or task.paused:
+        if self.busy or task is None or task.stage == "done" or task.paused:
+            return
+        self.refresh_models()
+        if not self.model_available:
+            ui.notify("Выберите модель, чтобы продолжить задачу.", type="warning")
+            self.models_panel.open()
             return
         if task.awaiting_approval:
             ui.notify("Сначала утвердите план или отправьте правки в чат.", type="warning")

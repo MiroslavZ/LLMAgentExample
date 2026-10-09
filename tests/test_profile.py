@@ -20,7 +20,7 @@ from llm_agent.models import RequestOptions, Turn
 from llm_agent.profile import PROFILE_FIELDS, ProfileStorageError, ProfileStore, UserProfile
 from llm_agent.service import ConversationService
 from llm_agent.storage import ConversationBusyError, ConversationStorageError
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation
 
 
 def response_with_text(text):
@@ -264,7 +264,7 @@ class AgentProfileTests(unittest.TestCase):
         for call in (meta, answer):
             self.assertEqual(profile_payload(call.kwargs["messages"]), self.profile.to_dict())
         self.assertEqual(meta.kwargs["messages"][0]["content"], META_PROMPT_SYSTEM)
-        self.assertEqual(meta.kwargs["response_format"], {"type": "text"})
+        self.assertNotIn("response_format", meta.kwargs)
         self.assertEqual(answer.kwargs["messages"][0]["content"], "Базовые правила")
         self.assertEqual(answer.kwargs["response_format"], {"type": "json_object"})
         self.assertEqual(compressed.kwargs["messages"][0]["content"], SUMMARY_SYSTEM)
@@ -287,7 +287,7 @@ class ServiceProfileTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.directory = Path(directory.name)
         self.service = ConversationService(self.directory, token="тестовый-ключ")
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.profile = UserProfile("student", "Ученик", language="русский", style="Подробно")
         self.service.save_profile(self.conversation.id, self.profile)
         self.service.select_profile(self.conversation.id, self.profile.id)
@@ -295,7 +295,7 @@ class ServiceProfileTests(unittest.TestCase):
         self.create.return_value = completion()
 
     def test_service_reloads_profile_on_each_request_and_does_not_mix_profiles(self):
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         expert = UserProfile("expert", "Эксперт", language="English", style="Кратко")
         self.service.save_profile(other.id, expert)
         self.service.select_profile(other.id, expert.id)
@@ -323,7 +323,7 @@ class ServiceProfileTests(unittest.TestCase):
         self.assertEqual(self.service.get_memory(self.conversation.id), initial_memory)
 
     def test_meta_uses_one_snapshot_despite_profile_edit_from_other_conversation(self):
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         self.service.select_profile(other.id, self.profile.id)
         changed = replace(self.profile, language="English")
 
@@ -374,13 +374,13 @@ class ServiceProfileTests(unittest.TestCase):
         self.create.assert_not_called()
 
     def test_deleting_conversation_clears_only_its_selection_and_keeps_profiles(self):
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         self.service.select_profile(other.id, self.profile.id)
         self.service.delete(self.conversation.id)
         self.assertIsNone(self.service.profiles.selected(self.conversation.id))
         self.assertEqual(self.service.get_profile(other.id), self.profile)
         self.assertEqual(self.service.profiles.list(), [self.profile])
-        self.assertIsNone(self.service.get_profile(self.service.create().id))
+        self.assertIsNone(self.service.get_profile(create_selected_conversation(self.service).id))
 
     def test_failed_json_deletion_rolls_back_selection_and_memory(self):
         self.service.remember_memory(self.conversation.id, "working", "цель", "Агент")

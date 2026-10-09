@@ -8,11 +8,13 @@ import sys
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
+from uuid import NAMESPACE_URL, uuid5
 
-from .agent import DEFAULT_MODEL
+from .agent import BASE_URL, DEFAULT_MODEL
 from .cli import ENV_PATH, load_env
 from .indexing.store import load_index
 from .history import HistoryManager
+from .llm_models import LLMModel
 from .models import ContextSettings, RAGSettings, RequestOptions, utc_now
 from .rag import ROOT, Retriever
 from .service import ConversationService
@@ -173,11 +175,24 @@ def write_report(path: Path, report: dict) -> None:
     temporary.replace(path)
 
 
+def evaluation_token(base_url: str, token_env: str | None) -> str:
+    """Не отправлять привычный облачный ключ произвольному новому серверу."""
+    if token_env:
+        token = os.environ.get(token_env, "").strip()
+        if not token:
+            raise ValueError("Указанная переменная с API-токеном отсутствует или пуста")
+        return token
+    if base_url.rstrip("/") in (BASE_URL, BASE_URL + "/v1"):
+        return os.environ.get("API_KEY", "").strip()
+    return ""
+
+
 def run_evaluation(
     *, questions_path: Path, index_path: Path, output: Path, threshold: float,
     modes: list[str], top_k_before: int = 20, top_k_after: int = 5,
     retrieval_only: bool = False, token: str | None = None, cache: str | None = None,
-    model: str = DEFAULT_MODEL, temperature: float = 0.0, max_tokens: int = 512,
+    model: str = DEFAULT_MODEL, base_url: str = BASE_URL,
+    temperature: float = 0.0, max_tokens: int = 512,
 ) -> dict:
     if not modes or len(set(modes)) != len(modes) or any(mode not in MODES for mode in modes):
         raise ValueError("Выберите различные поддерживаемые режимы сравнения")
@@ -187,6 +202,10 @@ def run_evaluation(
     parameters.validate()
     options = RequestOptions(model=model, temperature=temperature, max_tokens=max_tokens)
     options.validate()
+    evaluation_model = None if retrieval_only else LLMModel(
+        uuid5(NAMESPACE_URL, base_url.rstrip("/") + "\n" + model).hex,
+        model, model, base_url, token or "",
+    )
     index_path = index_path.resolve()
     output = output.resolve()
     if output.exists():
@@ -207,6 +226,7 @@ def run_evaluation(
         "questions_file": str(questions_path.resolve()),
         "questions_sha256": index_digest(questions_path),
         "modes": modes, "rag_settings": asdict(parameters), "request_options": asdict(options),
+        "base_url": evaluation_model.base_url if evaluation_model is not None else None,
         "system_prompt": "", "isolation": "Fresh dialogue per question/mode; temporary empty stores; no MCP, profile, invariants or prior task memory. RAG dialogue preparation runs normally.",
         "manual_score_scale": "0: incorrect, 1: partial, 2: correct and complete; null: not reviewed",
         "semantic_support_scale": "full / partial / unsupported; null: not reviewed or not applicable. Review answer against quotes and their complete chunks, independently of literal matching.",
@@ -224,6 +244,7 @@ def run_evaluation(
                 isolated / "conversations", token, invariants_path=isolated / "invariants.json",
             )
             if service is not None:
+                service.models.save(evaluation_model)
                 service.retriever = retriever
             for number, question in enumerate(questions, 1):
                 for mode in modes:
@@ -309,20 +330,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--retrieval-only", action="store_true")
     parser.add_argument("--cache-dir", default=None)
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--base-url", default=BASE_URL, help="Адрес OpenAI-совместимого API")
+    parser.add_argument("--model-token-env", help="Переменная с токеном; API_KEY по умолчанию только для DeepSeek")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--max-tokens", type=int, default=512)
     args = parser.parse_args(argv)
     modes = args.modes or (["baseline", "filtered"] if args.retrieval_only else list(MODES))
     try:
-        if not args.retrieval_only:
-            if not os.environ.get("API_KEY", "").strip():
-                raise ValueError("Для генерации ответов требуется API_KEY в окружении или .env")
         report = run_evaluation(
             questions_path=args.questions, index_path=args.index, output=args.output,
             threshold=args.threshold, modes=modes, top_k_before=args.top_k_before,
             top_k_after=args.top_k_after, retrieval_only=args.retrieval_only,
-            token=os.environ.get("API_KEY"), cache=args.cache_dir,
-            model=args.model, temperature=args.temperature, max_tokens=args.max_tokens,
+            token="" if args.retrieval_only else evaluation_token(args.base_url, args.model_token_env),
+            cache=args.cache_dir, model=args.model, base_url=args.base_url,
+            temperature=args.temperature, max_tokens=args.max_tokens,
         )
     except (ValueError, OSError) as error:
         print(str(error), file=sys.stderr)

@@ -55,7 +55,7 @@ class WebStartupTests(unittest.TestCase):
                     self.assertIn("chat-app", response.text)
                     self.assertIn("Системный промпт", response.text)
                     self.assertIn("Ваше сообщение", response.text)
-                    self.assertIn("API_KEY", response.text)
+                    self.assertIn("модель", response.text.lower())
                     files = list(Path(directory).glob("*.json"))
                     self.assertEqual(len(files), 1)
                     self.assertEqual(files[0], cli_path)

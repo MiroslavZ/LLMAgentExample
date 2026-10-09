@@ -5,8 +5,26 @@ from unittest.mock import patch
 
 from openai.types.chat import ChatCompletion
 
+from llm_agent.llm_models import LLMModel
 
-def rag_preparation(question, memory, turns, token, model, *, rewrite_enabled):
+
+def register_model(service, *, token="test-secret", model_id="deepseek-chat"):
+    """Явно добавить тестовую модель в каталог без обращения к API."""
+    model = LLMModel(
+        id="1" * 32, name="DeepSeek", model_id=model_id,
+        base_url="https://api.deepseek.com", token=token, timeout=60.0,
+    )
+    service.models.save(model)
+    return model
+
+
+def create_selected_conversation(service):
+    """Создать диалог с явно выбранной тестовой моделью."""
+    model = register_model(service)
+    return service.select_model(service.create().id, model.id)
+
+
+def rag_preparation(question, memory, turns, token, model, *, rewrite_enabled, **kwargs):
     """Подготовка без сети и изменений памяти для тестов остальных подсистем."""
     diagnostic = dict(status="success", reason=None, elapsed_seconds=0.0, usage=None)
     rewrite = dict(query=question, **diagnostic) if rewrite_enabled else None

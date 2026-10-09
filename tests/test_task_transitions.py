@@ -14,7 +14,7 @@ from llm_agent.task_state import (
     CONTINUE_TASK, STAGE_ACTIONS, TRANSITIONS,
     TaskResponseError, TaskStage, TaskState, TaskStateError,
 )
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation
 
 
 def payload(action, answer="Результат", **fields):
@@ -222,7 +222,7 @@ class ApprovalServiceTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.directory = Path(directory.name)
         self.service = ConversationService(self.directory, "test")
-        self.cid = self.service.create().id
+        self.cid = create_selected_conversation(self.service).id
         self.create = self.enterContext(patch("llm_agent.agent.OpenAI")).return_value.chat.completions.create
         self.service.start_task(self.cid, "Функция сложения")
         self.create.return_value = reply("plan", plan=["Код"])

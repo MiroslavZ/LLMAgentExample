@@ -6,6 +6,7 @@ import re
 import sys
 from dataclasses import asdict, replace
 from pathlib import Path
+from uuid import uuid4
 
 from rich.console import Console, RenderableType
 from rich.markdown import Markdown
@@ -14,10 +15,8 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
-from .agent import (
-    DEFAULT_MODEL,
-    CompressionResult, RequestResult,
-)
+from .agent import CompressionResult, RequestResult
+from .llm_models import LLMModel, ModelStorageError, ModelConnectionError, discover_models
 from .history import HistoryManager
 from .invariants import (
     InvariantSet, InvariantStorageError,
@@ -79,12 +78,19 @@ def load_env(path: Path) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Запрос к LLM через DeepSeek API")
+    parser = argparse.ArgumentParser(description="Чат с выбранной OpenAI-совместимой LLM")
     parser.add_argument(
         "--model",
-        default=DEFAULT_MODEL,
-        help=f"Имя модели (по умолчанию: {DEFAULT_MODEL})",
+        help="ID записи каталога или уникальный API ID; без флага используется выбор диалога",
     )
+    model_action = parser.add_mutually_exclusive_group()
+    model_action.add_argument("--models-list", action="store_true", help="Показать каталог моделей без токенов")
+    model_action.add_argument("--models-discover", metavar="BASE_URL", help="Получить список моделей сервера без добавления")
+    model_action.add_argument("--models-import", metavar="BASE_URL", help="Добавить список моделей сервера без дубликатов")
+    model_action.add_argument("--model-add", metavar="API_ID", help="Добавить модель вручную; требуется --base-url")
+    parser.add_argument("--base-url", help="Адрес OpenAI-совместимого API для --model-add")
+    parser.add_argument("--model-name", help="Отображаемое имя при --model-add (по умолчанию API ID)")
+    parser.add_argument("--model-token-env", help="Имя переменной окружения с токеном при добавлении/загрузке моделей")
     parser.add_argument("--system", help="Системный промпт диалога (сохраняется, если ещё не задан)")
     parser.add_argument("--user", help="Текст запроса; необязателен для управления диалогами, памятью, профилями, задачей и инвариантами")
     parser.add_argument("--batch", action="store_true", help="Один запрос для планировщика: --conversation и --user; результат в JSON")
@@ -253,6 +259,15 @@ def parse_args() -> argparse.Namespace:
         help="Показать действующие инварианты в JSON без обращения к API",
     )
     args = parser.parse_args()
+    model_management = args.models_list or args.models_discover or args.models_import or args.model_add
+    if args.model_add and not args.base_url:
+        parser.error("--model-add требует --base-url")
+    if (args.base_url or args.model_name) and not args.model_add:
+        parser.error("--base-url и --model-name используются с --model-add")
+    if args.model_token_env and not (args.model_add or args.models_discover or args.models_import):
+        parser.error("--model-token-env требует добавления или загрузки моделей")
+    if model_management and (args.user is not None or args.conversation or args.new_conversation or args.batch):
+        parser.error("Управление каталогом моделей выполняется отдельной командой")
     rag_changed = any(getattr(args, name) is not None for name in RAG_SETTING_FIELDS)
     if args.batch:
         if not args.conversation or args.user is None:
@@ -296,6 +311,13 @@ def parse_args() -> argparse.Namespace:
     if args.memory_show and (args.profile_list or args.profile_show):
         parser.error("--memory-show нельзя совмещать с --profile-list или --profile-show")
     memory_edit = args.memory_set or args.memory_delete
+    if model_management and (
+        args.model or any(profile_options) or any(task_options) or memory_edit
+        or args.memory_show or args.memory_clear_working or args.invariants_import
+        or args.invariants_show or args.list_conversations or args.show_conversation
+        or rag_changed or args.mcp_url or args.strategy
+    ):
+        parser.error("Управление каталогом моделей выполняется отдельной командой")
     if memory_edit:
         layer = memory_edit[0]
         if layer not in MEMORY_LAYERS:
@@ -309,7 +331,7 @@ def parse_args() -> argparse.Namespace:
         parser.error("--invariants-show совмещается только с --invariants-import и выбором файла")
     if args.user is None:
         if not any(profile_options) and not any(task_options) and not (
-            args.invariants_import or args.invariants_show or args.new_conversation
+            args.invariants_import or args.invariants_show or args.new_conversation or model_management or args.model
             or args.list_conversations or args.show_conversation or
             rag_changed or
             memory_edit or args.memory_show or args.memory_clear_working
@@ -373,7 +395,7 @@ def print_request_info(
     meta = Table.grid(padding=(0, 2))
     meta.add_column(style="bold dim")
     meta.add_column()
-    meta.add_row("Модель", args.model)
+    meta.add_row("Модель", args.model or "Выбранная в диалоге")
     meta.add_row("Формат", response_format or args.response_format)
     if stage:
         meta.add_row("Этап", stage)
@@ -613,10 +635,9 @@ def apply_task_options(args: argparse.Namespace, service: ConversationService, c
 
 def send_message(args: argparse.Namespace, conversation: Conversation, options: RequestOptions) -> None:
     load_env(ENV_PATH)
-    token = os.environ.get("API_KEY", "").strip()
-    if not token:
-        raise ValueError("Переменная API_KEY не найдена в окружении или .env")
-    service = ConversationService(args.data_dir, token=token, invariants_path=args.invariants_file)
+    service = ConversationService(args.data_dir, invariants_path=args.invariants_file)
+    selected = service.get_model(conversation.id, options.model)
+    args.model = selected.name
     settings = context_settings(args, conversation.settings)
     if args.batch:
         result = service.send(
@@ -722,6 +743,38 @@ def print_rag_sources(turn: Turn) -> None:
     console.print("Cosine similarity — сходство с поисковым запросом, не вероятность правильного ответа.")
 
 
+def manage_models(args: argparse.Namespace, service: ConversationService) -> bool:
+    """Управление каталогом без создания диалога и раскрытия токенов."""
+    if not (args.models_list or args.models_discover or args.models_import or args.model_add):
+        return False
+    token = ""
+    if args.model_token_env:
+        load_env(ENV_PATH)
+        token = os.environ.get(args.model_token_env, "").strip()
+        if not token:
+            raise ValueError("Указанная переменная с токеном отсутствует или пуста")
+    if args.models_discover or args.models_import:
+        url = args.models_discover or args.models_import
+        ids = discover_models(url, token)
+        if args.models_discover:
+            print_json(ids)
+            return True
+        service.models.import_models(url, token, ids)
+    elif args.model_add:
+        service.models.save(LLMModel(
+            id=uuid4().hex, name=args.model_name or args.model_add,
+            model_id=args.model_add, base_url=args.base_url, token=token,
+        ))
+    print_json([
+        {"id": model.id, "name": model.name, "model_id": model.model_id,
+         "base_url": model.base_url, "has_token": bool(model.token),
+         "timeout": model.timeout, "json_mode": model.json_mode,
+         "tools_enabled": model.tools_enabled}
+        for model in service.models.list()
+    ])
+    return True
+
+
 def main() -> None:
     args = parse_args()
     options = RequestOptions(
@@ -737,6 +790,8 @@ def main() -> None:
         except FileNotFoundError as error:
             raise ValueError(f"Файл инвариантов не найден: {args.invariants_import}") from error
     service = ConversationService(args.data_dir, token=None, invariants_path=args.invariants_file)
+    if manage_models(args, service):
+        return
     if imported_invariants is not None:
         service.invariants.save(imported_invariants)
     if args.invariants_show:
@@ -773,8 +828,13 @@ def main() -> None:
     if args.profile_list:
         print_json([profile.to_dict() for profile in service.profiles.list()])
     if conversation is None:
+        if args.model:
+            raise ValueError("Для выбора модели укажите --conversation или --new-conversation")
         return
 
+    if args.model:
+        selected = service.models.resolve(args.model)
+        conversation = service.select_model(conversation.id, selected.id)
     conversation = apply_task_options(args, service, conversation)
     if args.profile:
         service.select_profile(conversation.id, args.profile)
@@ -813,5 +873,5 @@ def run() -> None:
         main()
     except (ValueError, OSError, KeyError, MemoryStorageError, ProfileStorageError, InvariantStorageError,
             MCPConnectionError, MCPToolError, MCPStorageError, ConversationBusyError,
-            ConversationStorageError) as error:
+            ConversationStorageError, ModelStorageError, ModelConnectionError) as error:
         raise SystemExit(str(error)) from error

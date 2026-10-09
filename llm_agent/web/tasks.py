@@ -19,13 +19,14 @@ TASK_ERRORS = (ValueError, OSError, KeyError, ConversationBusyError, Conversatio
 class TaskPanel:
     def __init__(
         self, service: ConversationService, *, snapshot: Callable[[], Conversation | None],
-        busy: Callable[[], bool], token_available: bool, refresh_page: Callable[[], None],
-        continue_task: Callable[[], None],
+        busy: Callable[[], bool], refresh_page: Callable[[], None],
+        continue_task: Callable[[], None], model_available: Callable[[], bool] | None = None,
+        token_available: bool | None = None,
     ) -> None:
         self.service = service
         self.snapshot = snapshot
         self.busy = busy
-        self.token_available = token_available
+        self.model_available = model_available or (lambda: False)
         self.refresh_page = refresh_page
         self.continue_task = continue_task
         self._scope: str | None = None
@@ -90,7 +91,7 @@ class TaskPanel:
         self.resume_button.set_enabled(paused and not busy)
         self.approve_button.set_enabled(awaiting_approval and not paused and not busy)
         self.continue_button.set_enabled(
-            active and not awaiting_approval and not paused and not busy and self.token_available,
+            active and not awaiting_approval and not paused and not busy and self.model_available(),
         )
         if busy:
             self.status.set_text(
@@ -101,6 +102,8 @@ class TaskPanel:
             self.status.set_text("На паузе. Возобновите задачу, чтобы продолжить с сохранённого шага.")
         elif awaiting_approval:
             self.status.set_text("План ожидает утверждения. Проверьте пункты и утвердите план или отправьте правки в чат.")
+        elif active and not self.model_available():
+            self.status.set_text("Выберите модель в шапке диалога, чтобы продолжить задачу.")
         elif active:
             self.status.set_text("Каждая отправка выполняет один шаг. Прогресс сохраняется автоматически.")
         elif task:

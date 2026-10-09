@@ -12,7 +12,7 @@ from llm_agent.cli import main, parse_args, run
 from llm_agent.service import ConversationService
 from llm_agent.history import HistoryManager
 from llm_agent.task_state import CONTINUE_TASK, TaskStage, TaskState
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation
 
 
 class TaskCliTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class TaskCliTests(unittest.TestCase):
         self.directory = Path(directory.name)
         self.data_dir = self.directory / "conversations"
         self.service = ConversationService(self.data_dir, token=None)
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.history = self.service.store.path(self.conversation.id)
         self.memory_db = self.data_dir / "memory.sqlite3"
         self.profiles_db = self.data_dir / "profiles.sqlite3"

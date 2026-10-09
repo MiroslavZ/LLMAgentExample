@@ -11,6 +11,7 @@ from mcp import types
 from llm_agent.models import Conversation, ContextSettings, Turn
 from llm_agent.observations import MAX_PAGE_CHARS, TOOL_NAME, ObservationReader
 from llm_agent.service import ConversationService
+from tests.helpers import create_selected_conversation
 from llm_agent.tool_events import ToolCallRecord
 from tests.test_mcp_agent import SERVER, TOOL, answer, tool_response
 from llm_agent.mcp_client import MCPDiscovery
@@ -101,7 +102,7 @@ class ObservationIntegrationTests(unittest.TestCase):
 
     def test_model_can_choose_archive_while_external_mcp_remains_available(self):
         service = self.service()
-        conversation = service.create()
+        conversation = create_selected_conversation(service)
         service.mcp_servers.save(SERVER)
         steps = iter([
             lambda request: tool_response(request["tools"][0]["function"]["name"]),
@@ -131,7 +132,7 @@ class ObservationIntegrationTests(unittest.TestCase):
 
     def test_tool_result_survives_failed_final_and_can_be_read_after_restart(self):
         service = self.service()
-        conversation = service.create()
+        conversation = create_selected_conversation(service)
         service.mcp_servers.save(SERVER)
         count = 0
 
@@ -152,7 +153,7 @@ class ObservationIntegrationTests(unittest.TestCase):
 
     def test_empty_archive_is_available_alongside_configured_mcp(self):
         service = self.service()
-        conversation = service.create()
+        conversation = create_selected_conversation(service)
         service.mcp_servers.save(SERVER)
         self.create.side_effect = [tool_response(TOOL_NAME, arguments="{}"), answer("Наблюдений пока нет")]
         result = service.send(conversation.id, "Сводка")

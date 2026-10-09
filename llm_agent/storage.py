@@ -121,9 +121,9 @@ class ConversationStore:
             not isinstance(data, dict)
             or type(data.get("version")) is not int
             or data["version"] != cls.VERSION
-            or set(data) - {"dialogue_task_memory"} != {
+            or set(data) - {"dialogue_task_memory", "selected_model_id"} != {
                 "version", *(field.name for field in fields(Conversation)
-                             if field.name != "dialogue_task_memory")
+                             if field.name not in {"dialogue_task_memory", "selected_model_id"})
             }
         ):
             raise ValueError("Неизвестный формат диалога")
@@ -134,7 +134,8 @@ class ConversationStore:
         turns = []
         turn_fields = {field.name for field in fields(Turn)}
         for item in values["turns"]:
-            optional_fields = {"tool_calls", "rag_enabled", "rag_context", "rag_settings", "rag_answer", "rag_preparation"}
+            optional_fields = {"tool_calls", "rag_enabled", "rag_context", "rag_settings", "rag_answer", "rag_preparation",
+                               "model_id", "model_name", "model_base_url"}
             if (not isinstance(item, dict) or not set(item) <= turn_fields
                     or not turn_fields - optional_fields <= set(item)):
                 raise ValueError("Некорректный формат хода диалога")
@@ -153,7 +154,8 @@ class ConversationStore:
                 not isinstance(turn.user, str) or not turn.user.strip()
                 or turn.status not in ("running", "completed", "error", "partial", "interrupted")
                 or any(value is not None and not isinstance(value, str)
-                       for value in (turn.answer, turn.meta_prompt, turn.error))
+                       for value in (turn.answer, turn.meta_prompt, turn.error,
+                                     turn.model_id, turn.model_name, turn.model_base_url))
                 or not isinstance(turn.created_at, str)
                 or type(turn.memory_updated) is not bool
                 or type(turn.rag_enabled) is not bool
@@ -216,6 +218,10 @@ class ConversationStore:
                 conversation.created_at, conversation.updated_at,
             ))
             or type(conversation.started) is not bool
+            or (conversation.selected_model_id is not None and (
+                not isinstance(conversation.selected_model_id, str)
+                or re.fullmatch(r"[0-9a-f]{32}", conversation.selected_model_id) is None
+            ))
             or (bool(turns) and not conversation.started)
             or any(turn.status == "running" for turn in turns[:-1])
         ):

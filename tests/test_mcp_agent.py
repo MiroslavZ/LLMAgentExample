@@ -24,7 +24,7 @@ from llm_agent.mcp_tools import (
 from llm_agent.models import RequestOptions
 from llm_agent.service import ConversationService
 from llm_agent.task_state import TaskStage, TaskState
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation, register_model
 
 
 SERVER = MCPServer("github", "GitHub", "http://127.0.0.1:8000/mcp", enabled=True)
@@ -269,7 +269,7 @@ class MCPAgentTests(unittest.TestCase):
     def test_service_preserves_call_when_final_llm_request_fails(self):
         service = ConversationService(self.directory / "conversations", token="test-key")
         service.mcp_servers.save(SERVER)
-        conversation = service.create()
+        conversation = create_selected_conversation(service)
         def generate(**request):
             if request["messages"][-1]["role"] == "tool":
                 raise RuntimeError("private SDK failure")
@@ -285,7 +285,7 @@ class MCPAgentTests(unittest.TestCase):
     def test_transient_storage_lock_after_mcp_does_not_repeat_tool_or_stop_final_answer(self):
         service = ConversationService(self.directory / "conversations", token="test-key")
         service.mcp_servers.save(SERVER)
-        conversation = service.create()
+        conversation = create_selected_conversation(service)
         self.sequence(self.choose, answer())
         original_replace = Path.replace
         blocked = False
@@ -311,9 +311,11 @@ class MCPAgentTests(unittest.TestCase):
         self.assertEqual(service.store.load(conversation.id), result)
 
     def run_cli(self, *, entrypoint=cli_main):
+        model = register_model(ConversationService(self.directory / "conversations"))
         output = io.StringIO()
         arguments = [
-            "agent", "--mcp-url", SERVER.url, "--user", "Получи сведения о репозитории octocat/Hello-World",
+            "agent", "--model", model.id, "--mcp-url", SERVER.url,
+            "--user", "Получи сведения о репозитории octocat/Hello-World",
             "--data-dir", str(self.directory / "conversations"), "--new-conversation",
             "--invariants-file", str(self.directory / "invariants.json"),
         ]
@@ -342,6 +344,7 @@ class MCPAgentTests(unittest.TestCase):
         inventory = MCPServer("inventory", "Склад", "http://127.0.0.1:9101/mcp", enabled=True)
         delivery = MCPServer("delivery", "Доставка", "http://127.0.0.1:9102/mcp", enabled=True)
         service = ConversationService(self.directory / "conversations", token=None)
+        model = register_model(service)
         for server in (inventory, delivery):
             service.mcp_servers.save(server)
         tool = Tool(name="lookup", input_schema={
@@ -367,7 +370,7 @@ class MCPAgentTests(unittest.TestCase):
                       delivery_step, answer("Доставка товара item-42 займёт 3 дня."))
         output = io.StringIO()
         arguments = [
-            "agent", "--data-dir", str(service.store.data_dir),
+            "agent", "--data-dir", str(service.store.data_dir), "--model", model.id,
             "--invariants-file", str(self.directory / "invariants.json"),
             "--user", "Найди код товара Ноутбук на складе, затем узнай срок доставки по этому коду.",
         ]

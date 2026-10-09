@@ -12,6 +12,7 @@ from nicegui import Client, core, ui
 from llm_agent.memory import MemoryStorageError
 from llm_agent.models import ContextSettings, Turn
 from llm_agent.service import ConversationService
+from tests.helpers import create_selected_conversation
 from llm_agent.web.jobs import RequestRunner
 from llm_agent.web.page import ChatPage
 
@@ -21,7 +22,7 @@ class MemoryPageTests(unittest.IsolatedAsyncioTestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.service = ConversationService(Path(directory.name), token="test-token")
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.runner = RequestRunner(self.service)
         self.enterContext(patch("nicegui.background_tasks.create_or_defer",
                                 side_effect=lambda coroutine, **_: coroutine.close()))
@@ -98,7 +99,7 @@ class MemoryPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.service.get_memory(self.conversation.id).working, {})
 
     async def test_long_term_is_shared_and_working_isolated_across_dialogues(self):
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         with self.client:
             page = self.build_page()
             working = page.memory_editors["working"]

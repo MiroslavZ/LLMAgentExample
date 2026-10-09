@@ -16,7 +16,7 @@ from llm_agent.cli import run
 from llm_agent.models import Turn
 from llm_agent.service import ConversationService
 from llm_agent.tool_events import ToolCallRecord
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation
 
 
 class ScheduledCliTests(unittest.TestCase):
@@ -25,7 +25,7 @@ class ScheduledCliTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.data_dir = Path(directory.name) / "conversations"
         self.service = ConversationService(self.data_dir, token="test-only")
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.enterContext(patch("llm_agent.cli.load_env"))
         self.enterContext(patch.dict(os.environ, {"API_KEY": "test-only"}))
         client = self.enterContext(patch("llm_agent.agent.OpenAI"))
@@ -129,8 +129,8 @@ class ScheduledCliTests(unittest.TestCase):
         self.create.assert_not_called()
 
     def test_early_failure_does_not_print_partial_json_or_rich_output(self):
-        with patch.dict(os.environ, {"API_KEY": ""}):
-            code, output, _ = self.batch()
+        self.service.select_model(self.conversation.id, None)
+        code, output, _ = self.batch()
         self.assertNotEqual(code, 0)
         self.assertEqual(output, "")
 

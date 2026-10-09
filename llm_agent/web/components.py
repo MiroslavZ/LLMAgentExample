@@ -156,6 +156,10 @@ def render_turn(turn: Turn, *, restore: Callable[[], None], busy: bool) -> None:
                 with ui.row().classes("message-heading"):
                     ui.icon("auto_awesome", size="17px").classes("text-primary")
                     ui.label("Агент").classes("message-author")
+                    if turn.model_name or turn.model_id:
+                        ui.label(turn.model_name or turn.model_id).classes("message-model").tooltip(
+                            " · ".join(value for value in (turn.model_id, turn.model_base_url) if value)
+                        )
                     if turn.elapsed_seconds is not None:
                         ui.label(f"{turn.elapsed_seconds:.1f} с").classes("message-time")
                 if turn.answer:

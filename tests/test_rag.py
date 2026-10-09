@@ -14,7 +14,7 @@ from llm_agent.rag import RAGError, RAG_INSTRUCTION, Retriever, rewrite_query, s
 from llm_agent.rag_validation import validate_rag_context
 from llm_agent.storage import ConversationStorageError
 from llm_agent.service import ConversationService
-from tests.helpers import completion, patch_rag_preparation, rag_preparation
+from tests.helpers import completion, patch_rag_preparation, rag_preparation, create_selected_conversation, register_model
 
 
 def retrieved(text="Уникальное содержимое базы"):
@@ -47,7 +47,7 @@ class ConversationRAGTests(unittest.TestCase):
         self.service = ConversationService(self.directory, "test-token")
         self.service.retriever = Mock()
         self.service.retriever.retrieve.return_value = retrieved()
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
 
     def send(self, question="Вопрос", *, enabled=True):
         return self.service.send(
@@ -202,6 +202,8 @@ class ConversationRAGTests(unittest.TestCase):
 
     @patch("llm_agent.service.prepare_turn")
     def test_rewrite_is_separate_and_original_question_reaches_generator(self, rewrite):
+        model = register_model(self.service, token="test-token", model_id="chosen-model")
+        self.service.select_model(self.conversation.id, model.id)
         rewrite_result = dict(query="Поисковая формулировка", status="success", reason=None,
                               elapsed_seconds=0.1, usage=None)
         rewrite.side_effect = lambda *args, **kwargs: dict(
@@ -209,11 +211,13 @@ class ConversationRAGTests(unittest.TestCase):
         )
         result = self.service.send(self.conversation.id, "Исходный вопрос", settings=ContextSettings(
             rag_enabled=True, rag_rewrite_enabled=True,
-        ), options=RequestOptions(model="chosen-model"))
+        ))
         rewrite.assert_called_once()
         self.assertEqual(rewrite.call_args.args[0], "Исходный вопрос")
         self.assertEqual(rewrite.call_args.args[3:], ("test-token", "chosen-model"))
-        self.assertEqual(rewrite.call_args.kwargs, {"rewrite_enabled": True})
+        self.assertEqual(rewrite.call_args.kwargs, {
+            "rewrite_enabled": True, "base_url": model.base_url, "timeout": model.timeout,
+        })
         self.service.retriever.retrieve.assert_called_once_with(
             "Исходный вопрос", RAGSettings(rewrite_enabled=True), rewrite=rewrite_result,
         )
@@ -425,7 +429,7 @@ class RetrieverTests(unittest.TestCase):
         self.embedder.encode.return_value = [[-1.0, 0.0]]
         service = ConversationService(self.path.parent / "conversations", "test-token")
         service.retriever = self.retriever
-        conversation = service.create()
+        conversation = create_selected_conversation(service)
         with patch("llm_agent.agent.OpenAI") as client:
             complete = client.return_value.chat.completions.create
             complete.return_value = completion()
@@ -481,7 +485,7 @@ class RetrieverTests(unittest.TestCase):
         self.embedder.tokenizer.encode.return_value = [1, 2]
         service = ConversationService(self.path.parent / "conversations", "test-token")
         service.retriever = self.retriever
-        conversation = service.create()
+        conversation = create_selected_conversation(service)
         rewrite = dict(query="Поисковый запрос", status="success", reason=None, elapsed_seconds=0.1,
                        usage=dict(prompt_tokens=20, completion_tokens=5, total_tokens=25))
         prepared = lambda *args, **kwargs: dict(rag_preparation(*args, **kwargs), rewrite=rewrite)

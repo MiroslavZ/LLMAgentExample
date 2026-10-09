@@ -14,6 +14,7 @@ from nicegui import Client, core, ui
 from llm_agent.models import Turn
 from llm_agent.profile import PROFILE_FIELDS, ProfileStorageError, UserProfile
 from llm_agent.service import ConversationService
+from tests.helpers import create_selected_conversation
 from llm_agent.web.jobs import RequestRunner
 from llm_agent.web.page import ChatPage
 
@@ -23,7 +24,7 @@ class ProfilePageTests(unittest.IsolatedAsyncioTestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.service = ConversationService(Path(directory.name), token="test-token")
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.runner = RequestRunner(self.service)
         self.enterContext(patch("nicegui.background_tasks.create_or_defer",
                                 side_effect=lambda coroutine, **_: coroutine.close()))
@@ -92,7 +93,7 @@ class ProfilePageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.service.profiles.list(), [profile])
 
     async def test_selection_is_per_dialogue_and_dialog_closes_on_navigation(self):
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         first = self.add_profile()
         second = self.add_profile("Эксперт", style="Кратко и технически")
         self.service.select_profile(self.conversation.id, first.id)
@@ -112,7 +113,7 @@ class ProfilePageTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_edit_common_profile_updates_all_selected_dialogues(self):
         profile = self.add_profile(style="Кратко")
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         self.service.select_profile(self.conversation.id, profile.id)
         self.service.select_profile(other.id, profile.id)
         with self.client:
@@ -190,7 +191,7 @@ class ProfilePageTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_delete_confirmation_removes_shared_profile_and_preserves_memory(self):
         profile = self.add_profile()
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         self.service.select_profile(self.conversation.id, profile.id)
         self.service.select_profile(other.id, profile.id)
         self.service.remember_memory(self.conversation.id, "working", "цель", "Изучить Python")
@@ -226,7 +227,7 @@ class ProfilePageTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_old_delete_confirmation_cannot_act_in_another_dialogue(self):
         profile = self.add_profile()
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         self.service.select_profile(self.conversation.id, profile.id)
         self.service.select_profile(other.id, profile.id)
         with self.client:

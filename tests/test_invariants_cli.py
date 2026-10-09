@@ -12,7 +12,7 @@ from llm_agent.agent import Agent
 from llm_agent.cli import main, parse_args, run
 from llm_agent.service import ConversationService
 from llm_agent.invariants import Invariant, InvariantSet, InvariantStore
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation
 
 
 def reply(content):
@@ -32,7 +32,7 @@ class InvariantCliTests(unittest.TestCase):
         self.directory = Path(directory.name)
         self.data_dir = self.directory / "conversations"
         self.service = ConversationService(self.data_dir, token=None)
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.history = self.service.store.path(self.conversation.id)
         self.memory_db = self.data_dir / "memory.sqlite3"
         self.invariants_file = self.directory / "invariants.json"

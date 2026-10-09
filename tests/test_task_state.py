@@ -13,7 +13,7 @@ from llm_agent.models import RequestOptions, Turn
 from llm_agent.profile import UserProfile
 from llm_agent.service import ConversationBusyError, ConversationService, ConversationStorageError
 from llm_agent.task_state import CONTINUE_TASK, TaskResponseError, TaskStage, TaskState, TaskStateError
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation
 
 
 def payload(action, answer="Результат", **values):
@@ -292,7 +292,7 @@ class TaskServiceTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.directory = Path(directory.name)
         self.service = ConversationService(self.directory, "test")
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.create = self.enterContext(patch("llm_agent.agent.OpenAI")).return_value.chat.completions.create
 
     def test_specific_rejection_is_saved_and_can_be_retried_without_losing_progress(self):
@@ -390,7 +390,7 @@ class TaskServiceTests(unittest.TestCase):
     def test_busy_and_meta_rejected_and_conversations_are_isolated(self):
         cid = self.conversation.id
         initial = self.service.start_task(cid, "Задача")
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         self.assertIsNone(self.service.get(other.id).task_state)
         with self.assertRaises(TaskStateError):
             self.service.send(cid, "Запрос", options=RequestOptions(meta_prompt=True))

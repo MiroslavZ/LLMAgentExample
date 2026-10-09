@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from llm_agent.rag import select_candidates
-from llm_agent.rag_evaluation import citation_metrics, dialogue_usage, evidence_metrics, load_questions, run_evaluation, summarize
+from llm_agent.rag_evaluation import citation_metrics, dialogue_usage, evaluation_token, evidence_metrics, load_questions, run_evaluation, summarize
 from tests.helpers import completion, patch_rag_preparation, rag_preparation
 
 
@@ -125,6 +126,28 @@ class RAGEvaluationTests(unittest.TestCase):
         self.assertTrue(all(row["request_usage"] for row in report["runs"]))
         self.assertTrue(all(row["rag_answer"]["status"] == "answered" for row in report["runs"]))
         self.assertFalse(any(self.directory.glob("rag-evaluation-*")))
+
+    def test_local_model_without_token_uses_requested_endpoint(self):
+        base_url = "http://127.0.0.1:1234/v1"
+        with patch("llm_agent.agent.OpenAI") as openai:
+            generate = openai.return_value.chat.completions.create
+            generate.return_value = self.grounded_completion()
+            report = self.run_comparison(base_url=base_url, model="gemma", threshold=0.35)
+        self.assertEqual(report["status"], "completed")
+        self.assertEqual(report["base_url"], base_url)
+        self.assertTrue(openai.call_args_list)
+        for call in openai.call_args_list:
+            self.assertEqual(call.kwargs["base_url"], base_url)
+            self.assertEqual(call.kwargs["api_key"], "local-no-auth")
+        self.assertTrue(all(call.kwargs["model"] == "gemma" for call in generate.call_args_list))
+
+    def test_evaluation_token_is_selected_for_the_requested_server_only(self):
+        with patch.dict(os.environ, {"API_KEY": "cloud-secret", "LOCAL_LLM_TOKEN": "local-secret"}, clear=True):
+            self.assertEqual(evaluation_token("https://api.deepseek.com/v1", None), "cloud-secret")
+            self.assertEqual(evaluation_token("http://127.0.0.1:1234/v1", None), "")
+            self.assertEqual(evaluation_token("http://127.0.0.1:1234/v1", "LOCAL_LLM_TOKEN"), "local-secret")
+            with self.assertRaisesRegex(ValueError, "отсутствует или пуста"):
+                evaluation_token("http://127.0.0.1:1234/v1", "MISSING_TOKEN")
 
     def test_existing_report_is_never_overwritten(self):
         self.output.write_text("previous result", encoding="utf-8")

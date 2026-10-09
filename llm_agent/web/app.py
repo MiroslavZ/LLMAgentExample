@@ -1,7 +1,6 @@
 """Запуск локального чата: python -m llm_agent.web."""
 
 import argparse
-import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -15,7 +14,7 @@ from .page import ChatPage
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
-def create_app(service: ConversationService, *, token_available: bool) -> RequestRunner:
+def create_app(service: ConversationService, *, token_available: bool | None = None) -> RequestRunner:
     """Собрать маршруты; сервис можно подменить для проверки без API."""
     runner = RequestRunner(service)
     ui.add_css((Path(__file__).with_name("styles.css")).read_text(encoding="utf-8"), shared=True)
@@ -23,7 +22,7 @@ def create_app(service: ConversationService, *, token_available: bool) -> Reques
     @ui.page("/", title="Агент · Чат", language="ru")
     def chat(conversation: str | None = None) -> None:
         ui.colors(primary="#6658d9", secondary="#8176e4", accent="#6658d9", positive="#20856a")
-        ChatPage(service, runner, token_available=token_available, conversation_id=conversation).build()
+        ChatPage(service, runner, conversation_id=conversation).build()
 
     return runner
 
@@ -40,9 +39,8 @@ def main() -> None:
     parser.add_argument("--no-browser", action="store_true", help="Не открывать браузер автоматически")
     args = parser.parse_args()
     load_dotenv(PROJECT_ROOT / ".env")
-    token = os.getenv("API_KEY", "").strip()
-    service = ConversationService(args.data_dir, token=token or None, invariants_path=args.invariants_file)
-    create_app(service, token_available=bool(token))
+    service = ConversationService(args.data_dir, invariants_path=args.invariants_file)
+    create_app(service)
     ui.run(
         host=args.host, port=args.port, title="Агент · Чат", favicon="✦",
         language="ru", show=not args.no_browser, reload=False,

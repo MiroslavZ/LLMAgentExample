@@ -242,6 +242,8 @@ celerybeat.pid
 # Environments
 /history.json
 /data/conversations/
+models.sqlite3
+models.sqlite3-*
 .nicegui/
 .env
 .venv

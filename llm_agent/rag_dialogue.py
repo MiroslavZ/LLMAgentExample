@@ -5,6 +5,7 @@ import time
 from copy import deepcopy
 
 from openai import OpenAI
+from .llm_client import connection_options
 
 
 _GROUPS = ("clarifications", "constraints", "terms")
@@ -149,7 +150,8 @@ def _unique_object(pairs):
 
 
 def prepare_turn(question: str, memory: dict, turns: list, token: str, model: str,
-                 *, rewrite_enabled: bool) -> dict:
+                 *, rewrite_enabled: bool, base_url: str | None = None,
+                 timeout: float = 15.0) -> dict:
     """Один вызов извлекает изменения памяти и независимо переписывает запрос.
 
     turns включает текущий running-ход. Usage и время учитываются только в diagnostic.
@@ -168,7 +170,7 @@ def prepare_turn(question: str, memory: dict, turns: list, token: str, model: st
             raise ValueError("Текущий ход не соответствует вопросу")
         payload = dict(current_user=question, memory=memory, recent_turns=_tail(turns[:-1]),
                        rewrite_enabled=rewrite_enabled)
-        with OpenAI(api_key=token, base_url=BASE_URL, timeout=15.0, max_retries=0) as client:
+        with OpenAI(**connection_options(base_url or BASE_URL, token), timeout=timeout, max_retries=0) as client:
             response = client.chat.completions.create(
                 model=model, temperature=0, max_tokens=2500,
                 messages=[{"role": "system", "content": DIALOGUE_INSTRUCTION},

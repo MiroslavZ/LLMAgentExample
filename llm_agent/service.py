@@ -18,7 +18,8 @@ from openai import (
     BadRequestError, RateLimitError,
 )
 
-from .agent import Agent, CompressionResult, RequestResult, DEFAULT_MODEL
+from .agent import Agent, CompressionResult, RequestResult
+from .llm_models import LLMModel, ModelStore, ModelStorageError
 from .context_strategy import FactsStrategy, WindowStrategy
 from .history import HistoryManager, TokenUsage
 from .invariants import InvariantSet, InvariantStorageError, InvariantStore
@@ -135,6 +136,8 @@ class _ConversationHistory(HistoryManager):
 def _friendly_error(error: Exception) -> str:
     if isinstance(error, RAGError):
         return str(error)
+    if isinstance(error, ModelStorageError):
+        return "Не удалось прочитать каталог моделей. Проверьте доступ к models.sqlite3."
     # Никогда не выводим str(error) из SDK: там могут быть тело ответа и секреты.
     if isinstance(error, ConversationStorageError):
         code = getattr(error.__cause__, "winerror", None)
@@ -154,7 +157,7 @@ def _friendly_error(error: Exception) -> str:
         # контекст задачи, без тела ответа или текста исключений SDK.
         return str(error)
     if isinstance(error, AuthenticationError):
-        return "Сервис модели отклонил API-ключ. Проверьте API_KEY на сервере."
+        return "Сервис модели отклонил API-ключ. Проверьте токен в менеджере моделей."
     if isinstance(error, RateLimitError):
         return "Сервис модели временно ограничил запросы. Повторите позже."
     if isinstance(error, APITimeoutError):
@@ -178,15 +181,15 @@ class ConversationService:
     """
 
     def __init__(
-        self, data_dir: Path, token: str | None, *, invariants_path: Path | None = None,
+        self, data_dir: Path, token: str | None = None, *, invariants_path: Path | None = None,
     ) -> None:
         self.store = ConversationStore(data_dir)
         self.memory = MemoryStore(self.store.data_dir / "memory.sqlite3")
         self.profiles = ProfileStore(self.store.data_dir / "profiles.sqlite3")
         self.mcp_servers = MCPServerStore(self.store.data_dir / "mcp.sqlite3")
+        self.models = ModelStore(self.store.data_dir / "models.sqlite3")
         self.invariants_path = Path(invariants_path) if invariants_path is not None else self.store.data_dir.parent / "invariants.json"
         self.invariants = InvariantStore(self.invariants_path)
-        self._token = token
         self.retriever = Retriever()
         self._state_lock = threading.Lock()
         self._locks: dict[str, threading.Lock] = {}
@@ -196,9 +199,27 @@ class ConversationService:
         self._unsaved: dict[str, Conversation] = {}
         self._recover_interrupted()
 
-    @property
-    def token_available(self) -> bool:
-        return bool(self._token and self._token.strip())
+    def get_model(self, conversation_id: str, reference: str | None = None) -> LLMModel:
+        """Разрешить явный выбор; старые диалоги не получают облачную модель автоматически."""
+        selected = reference or self.get(conversation_id).selected_model_id
+        if not selected:
+            raise ValueError("Выберите модель в менеджере моделей перед отправкой сообщения.")
+        try:
+            return self.models.resolve(selected) if reference else self.models.get(selected)
+        except KeyError:
+            raise ValueError("Выбранная модель удалена или недоступна. Выберите другую модель.") from None
+
+    def select_model(self, conversation_id: str, model_id: str | None) -> Conversation:
+        with self._operation(conversation_id):
+            conversation = self.get(conversation_id)
+            if conversation.busy:
+                raise ConversationBusyError("Дождитесь завершения запроса перед сменой модели")
+            if model_id is not None:
+                self.models.get(model_id)
+            conversation.selected_model_id = model_id
+            conversation.updated_at = utc_now()
+            self._save(conversation)
+            return deepcopy(conversation)
 
     @property
     def storage_errors(self) -> list[str]:
@@ -479,6 +500,11 @@ class ConversationService:
                 self._apply_settings(conversation, settings, expected_settings)
             if conversation.started and system_prompt and system_prompt != conversation.system_prompt:
                 raise ValueError("Системный промпт фиксируется при первой отправке. Создайте новый диалог.")
+            # Неизменяемый снимок подключения на весь ход, включая служебные вызовы.
+            model = self.get_model(conversation_id, options.model)
+            if not model.json_mode and options.response_format != "text":
+                raise ValueError("У выбранной модели отключён JSON mode. Выберите текстовый формат ответа.")
+            conversation.selected_model_id = model.id
             if not conversation.started:
                 conversation.system_prompt = system_prompt
                 conversation.title = " ".join(user.split())[:56]
@@ -486,6 +512,7 @@ class ConversationService:
             conversation.turns.append(Turn(
                 user=user.strip(), options=options, rag_enabled=conversation.settings.rag_enabled,
                 rag_settings=conversation.settings.rag_options() if conversation.settings.rag_enabled else None,
+                model_id=model.model_id, model_name=model.name, model_base_url=model.base_url,
             ))
             conversation.updated_at = utc_now()
             self._save(conversation)
@@ -494,18 +521,11 @@ class ConversationService:
             agent = None
             compressions: list[CompressionResult] = []
             try:
-                if not self.token_available:
-                    conversation.turns[-1].status = "error"
-                    conversation.turns[-1].error = "API_KEY не задан. Укажите ключ в окружении сервера или файле .env и перезапустите приложение."
-                    conversation.turns[-1].elapsed_seconds = time.perf_counter() - started_at
-                    conversation.updated_at = utc_now()
-                    self._save(conversation)
-                    return deepcopy(conversation)
                 if conversation.settings.rag_enabled:
                     rag_settings = conversation.turns[-1].rag_settings
                     prepared = prepare_turn(
                         user.strip(), conversation.dialogue_task_memory, conversation.turns,
-                        self._token, options.model or DEFAULT_MODEL,
+                        model.token, model.model_id, base_url=model.base_url, timeout=model.timeout,
                         rewrite_enabled=rag_settings.rewrite_enabled,
                     )
                     conversation.dialogue_task_memory = prepared["memory"]
@@ -521,7 +541,9 @@ class ConversationService:
                 history = _ConversationHistory(self.store, conversation, started_at)
                 settings = conversation.settings
                 agent_options = {
-                    "history": history, "timeout": 60.0, "max_retries": 0,
+                    "history": history, "timeout": model.timeout, "max_retries": 0,
+                    "base_url": model.base_url, "json_mode": model.json_mode,
+                    "tools_enabled": model.tools_enabled,
                     "memory": memory,
                     "profile": profile,
                     "invariants": self.get_invariants(),
@@ -543,12 +565,12 @@ class ConversationService:
                     agent_options.update(strategy=settings.strategy, window_size=settings.window_size)
                 elif settings.strategy == "summary":
                     agent_options.update(last_messages=settings.last_messages, compress_every=settings.compress_every)
-                agent = Agent(self._token, **agent_options)
+                agent = Agent(model.token, **agent_options)
                 request = agent.request_with_meta_prompt if options.meta_prompt else agent.request
                 result = request(
                     user.strip(), system=conversation.system_prompt,
                     temperature=options.temperature, max_tokens=options.max_tokens,
-                    model=options.model or DEFAULT_MODEL,
+                    model=model.model_id,
                     stop_sequences=options.stop_sequences,
                     response_format=options.response_format,
                 )

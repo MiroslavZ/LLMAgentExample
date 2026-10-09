@@ -18,6 +18,7 @@ from llm_agent.agent import RequestResult
 from llm_agent.cli import context_settings, parse_args, print_rag_sources, run, send_message
 from llm_agent.models import ContextSettings, RAGSettings, RequestOptions, Turn
 from llm_agent.service import ConversationService
+from tests.helpers import create_selected_conversation
 
 
 class RAGCLITests(unittest.TestCase):
@@ -26,7 +27,7 @@ class RAGCLITests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.directory = Path(directory.name)
         self.service = ConversationService(self.directory, token=None)
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.enterContext(patch("llm_agent.agent.OpenAI", side_effect=AssertionError("Сеть запрещена")))
         self.enterContext(patch("llm_agent.cli.load_env"))
         self.enterContext(patch.dict(os.environ, {"API_KEY": "test-only"}))
@@ -93,12 +94,14 @@ class RAGCLITests(unittest.TestCase):
         with patch("sys.argv", self.arguments("--user", "Вопрос")):
             args = parse_args()
         with patch("llm_agent.cli.ConversationService") as factory, patch("llm_agent.cli.console", Console(file=output)):
+            factory.return_value.get_model.return_value = self.service.get_model(self.conversation.id)
             factory.return_value.send.return_value = result
             send_message(args, self.conversation, RequestOptions())
         self.assertIn("Режим: RAG + rewrite + фильтр", output.getvalue())
         self.assertFalse(self.conversation.settings.rag_enabled)
         args.batch = True
         with patch("llm_agent.cli.ConversationService") as factory, contextlib.redirect_stdout(io.StringIO()) as stdout:
+            factory.return_value.get_model.return_value = self.service.get_model(self.conversation.id)
             factory.return_value.send.return_value = result
             send_message(args, self.conversation, RequestOptions())
         data = json.loads(stdout.getvalue())
@@ -124,6 +127,7 @@ class RAGCLITests(unittest.TestCase):
             return result
 
         with patch("llm_agent.cli.ConversationService") as factory, patch("llm_agent.cli.console", Console(file=output)):
+            factory.return_value.get_model.return_value = self.service.get_model(self.conversation.id)
             factory.return_value.send.side_effect = send
             send_message(args, self.conversation, RequestOptions())
         self.assertIn("Проверенный ответ", output.getvalue())

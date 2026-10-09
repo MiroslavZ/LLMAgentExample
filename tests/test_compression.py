@@ -47,7 +47,7 @@ class CompressionTests(unittest.TestCase):
             {"role": "user", "content": "Первый"},
             {"role": "assistant", "content": "Первый ответ"},
         ]})
-        self.assertEqual(compression.kwargs["response_format"], {"type": "text"})
+        self.assertNotIn("response_format", compression.kwargs)
         self.assertNotIn("stop", compression.kwargs)
         sent = request.kwargs["messages"]
         self.assertEqual(sent[0], {"role": "system", "content": "Правила"})

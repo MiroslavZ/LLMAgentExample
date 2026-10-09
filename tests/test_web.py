@@ -14,6 +14,7 @@ from nicegui.elements.timer import Timer
 from llm_agent.models import ContextSettings, RAGSettings, RequestOptions, Turn
 from llm_agent.rag_answer import render_answer, unknown_answer
 from llm_agent.service import ConversationService, ConversationStorageError
+from tests.helpers import create_selected_conversation
 from llm_agent.tool_events import ToolAttachment, ToolCallRecord
 from llm_agent.web.components import render_turn
 from llm_agent.web.jobs import RequestRunner
@@ -25,7 +26,7 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.service = ConversationService(Path(directory.name), token="test-token")
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.runner = RequestRunner(self.service)
 
         # Оставляем настоящие Client, дерево элементов и обработчики значений.
@@ -61,6 +62,7 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
         return [element.text for element in container.descendants() if isinstance(element, ui.label)]
 
     async def test_build_has_three_panels_and_empty_first_message_form(self):
+        self.service.select_model(self.conversation.id, None)
         with self.client:
             page = self.build_page(token_available=False)
 
@@ -72,7 +74,7 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page.system_input.value, "")
         self.assertTrue(page.strategy_input.enabled)
         self.assertFalse(page.send_button.enabled)
-        self.assertTrue(any("API_KEY" in label for label in self.labels(page.banner)))
+        self.assertTrue(any("модель" in label.lower() for label in self.labels(page.banner)))
         self.assertEqual(len(self.service.list_conversations()), 1)
 
     async def test_rag_setting_persists_and_can_change_after_conversation_started(self):
@@ -223,7 +225,7 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
     async def test_cli_command_tracks_selected_conversation_and_uses_quoted_path(self):
         with self.client:
             page = self.build_page()
-            other = self.service.create()
+            other = create_selected_conversation(self.service)
             page.select(other.id)
         button = next(element for element in self.client.content.descendants()
                       if isinstance(element, ui.button) and element.props.get('icon') == 'terminal')
@@ -263,16 +265,16 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(dialog.value)
         self.assertNotIn(conversation.id, [item.id for item in self.service.list_conversations()])
         self.assertEqual(page.snapshot.id, page.conversation_id)
-        self.assertTrue(page.send_button.enabled)
 
     async def test_delete_active_dialogue_from_button_context(self):
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         other.title = "Другой диалог"
         self.service.store.save(other)
         with self.client:
             page = self.build_page()
         await self.delete_from_list(page, self.conversation)
         self.assertEqual(page.conversation_id, other.id)
+        self.assertTrue(page.send_button.enabled)
 
     async def test_delete_last_dialogue_from_button_context(self):
         with self.client:
@@ -280,9 +282,11 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
         await self.delete_from_list(page, self.conversation)
         self.assertNotEqual(page.conversation_id, self.conversation.id)
         self.assertEqual(len(self.service.list_conversations()), 1)
+        self.assertIsNone(page.snapshot.selected_model_id)
+        self.assertFalse(page.send_button.enabled)
 
     async def test_delete_inactive_dialogue_preserves_active_draft(self):
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         other.title = "Другой диалог"
         self.service.store.save(other)
         with self.client:
@@ -293,7 +297,7 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page.user_input.value, "Сохранить черновик")
 
     async def test_select_keeps_each_dialogue_draft_and_request_options(self):
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         with self.client:
             page = self.build_page()
             page.user_input.set_value("Первый черновик")
@@ -318,7 +322,7 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(page.meta_input.value)
 
     async def test_pre_save_failure_restores_text_after_switching_dialogues(self):
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         submitted = asyncio.Event()
         finish = asyncio.Event()
 
@@ -387,7 +391,7 @@ class ChatPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.service.get(self.conversation.id).settings, original)
 
     async def test_storage_warning_appears_and_clears_during_regular_refresh(self):
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         path = self.service.store.path(other.id)
         valid_data = path.read_text(encoding="utf-8")
         with self.client:

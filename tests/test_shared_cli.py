@@ -16,7 +16,7 @@ from llm_agent.models import ContextSettings, RequestOptions
 from llm_agent.profile import UserProfile
 from llm_agent.service import ConversationService
 from llm_agent.storage import DEFAULT_DATA_DIR
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation, register_model
 
 
 class SharedConversationTests(unittest.TestCase):
@@ -43,7 +43,7 @@ class SharedConversationTests(unittest.TestCase):
 
     def test_web_then_cli_by_path_then_web_preserves_context_and_transcript(self):
         web = self.service()
-        conversation = web.create()
+        conversation = create_selected_conversation(web)
         web.send(conversation.id, "Первый вопрос в вебе", system_prompt="Отвечай кратко")
         path = web.store.path(conversation.id)
         del web  # no server/service instance needs to remain alive
@@ -66,7 +66,8 @@ class SharedConversationTests(unittest.TestCase):
         ])
 
     def test_cli_then_web_then_cli_by_id_and_history_alias(self):
-        self.cli('--user', 'Начало из CLI')
+        model = register_model(self.service())
+        self.cli('--model', model.id, '--user', 'Начало из CLI')
         web = self.service()
         conversation, = web.list_conversations()
         web.send(conversation.id, "Продолжение в вебе")
@@ -76,13 +77,13 @@ class SharedConversationTests(unittest.TestCase):
             "Начало из CLI", "Продолжение в вебе", "Снова CLI", "Через alias",
         ])
         # Omitting selection explicitly starts another independent conversation.
-        self.cli('--user', 'Другой диалог')
+        self.cli('--model', model.id, '--user', 'Другой диалог')
         self.assertEqual(len(web.list_conversations()), 2)
         self.assertEqual(self.create.call_args.kwargs['messages'], [{"role": "user", "content": "Другой диалог"}])
 
     def test_window_settings_survive_handoff_and_transcript_remains_complete(self):
         web = self.service()
-        conversation = web.create()
+        conversation = create_selected_conversation(web)
         settings = ContextSettings(strategy="window", window_size=2)
         web.send(conversation.id, "Первая реплика", settings=settings)
         self.cli('--conversation', conversation.id, '--user', 'Вторая реплика')
@@ -100,7 +101,7 @@ class SharedConversationTests(unittest.TestCase):
         for strategy, response in (("summary", "Сводка предыдущего диалога"), ("facts", '{"goal": "Общая цель"}')):
             with self.subTest(strategy=strategy):
                 web = self.service()
-                conversation = web.create()
+                conversation = create_selected_conversation(web)
                 settings = ContextSettings(strategy=strategy, window_size=2, last_messages=0, compress_every=2)
                 web.send(conversation.id, "Первый вопрос", settings=settings)
                 intermediate = completion()
@@ -117,7 +118,7 @@ class SharedConversationTests(unittest.TestCase):
 
     def test_working_memory_and_profile_are_shared_by_conversation_id(self):
         web = self.service()
-        conversation = web.create()
+        conversation = create_selected_conversation(web)
         profile = UserProfile(id="dev", name="Разработчик", language="Русский")
         web.save_profile(conversation.id, profile)
         web.select_profile(conversation.id, profile.id)
@@ -133,7 +134,9 @@ class SharedConversationTests(unittest.TestCase):
 
     def test_cli_errors_are_persisted_and_web_can_resume(self):
         self.cli('--new-conversation')
-        conversation, = self.service().list_conversations()
+        service = self.service()
+        conversation, = service.list_conversations()
+        service.select_model(conversation.id, register_model(service).id)
         self.create.side_effect = RuntimeError("private SDK details")
         with self.assertRaises(SystemExit) as error:
             self.cli('--conversation', conversation.id, '--user', 'Неудачный запрос')
@@ -146,7 +149,7 @@ class SharedConversationTests(unittest.TestCase):
 
     def test_live_web_request_blocks_cli_changes(self):
         web = self.service()
-        conversation = web.create()
+        conversation = create_selected_conversation(web)
         def reply(**_kwargs):
             with self.assertRaisesRegex(SystemExit, 'операц|запрос'):
                 self.cli('--conversation', conversation.id, '--user', 'Конкурирующий запрос')

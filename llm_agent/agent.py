@@ -9,6 +9,7 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletion
 
 from .branch_history import BranchHistoryManager
+from .llm_client import connection_options
 from .history import DEFAULT_HISTORY_PATH, DialogueUsage, HistoryManager, Message, TokenUsage
 from .context_strategy import SUPPORTED_STRATEGIES, FactsStrategy, WindowStrategy
 from .memory import MemorySnapshot
@@ -120,6 +121,9 @@ class Agent:
         rag_context: dict | None = None,
         rag_threshold: float = 0.35,
         dialogue_task_memory: dict | None = None,
+        base_url: str = BASE_URL,
+        json_mode: bool = True,
+        tools_enabled: bool = True,
     ) -> None:
         if strategy is not None and strategy not in SUPPORTED_STRATEGIES:
             raise ValueError(f"Неизвестная стратегия: {strategy}")
@@ -156,6 +160,8 @@ class Agent:
         self.rag_context = deepcopy(rag_context)
         self.rag_threshold = rag_threshold
         self.dialogue_task_memory = deepcopy(dialogue_task_memory)
+        self.json_mode = json_mode
+        self.tools_enabled = tools_enabled
         self.history = history if history is not None else (
             BranchHistoryManager(history_path, branch=branch) if strategy == "branch"
             else HistoryManager(history_path, strategy=self._strategy)
@@ -165,7 +171,14 @@ class Agent:
             client_options["timeout"] = timeout
         if max_retries is not None:
             client_options["max_retries"] = max_retries
-        self._client = OpenAI(api_key=token, base_url=BASE_URL, **client_options)
+        self._client = OpenAI(**connection_options(base_url, token), **client_options)
+
+    def _complete(self, **request) -> ChatCompletion:
+        """Применить возможности сервера одинаково ко всем вызовам модели."""
+        response_format = request.get("response_format", {})
+        if response_format.get("type") == "text" or not self.json_mode:
+            request.pop("response_format", None)
+        return self._client.chat.completions.create(**request)
 
     def close(self) -> None:
         """Освободить HTTP-соединения после использования агента сервером."""
@@ -175,7 +188,7 @@ class Agent:
         if not isinstance(self._strategy, FactsStrategy):
             return
         previous = self.history.facts
-        response = self._client.chat.completions.create(
+        response = self._complete(
             model=model,
             messages=[
                 {"role": "system", "content": FACTS_SYSTEM},
@@ -205,7 +218,7 @@ class Agent:
         messages = self.history.get_compression_messages(self.last_messages)
         if len(messages) < self.compress_every:
             return
-        response = self._client.chat.completions.create(
+        response = self._complete(
             model=model,
             messages=[
                 {"role": "system", "content": SUMMARY_SYSTEM},
@@ -337,7 +350,7 @@ class Agent:
                 if "tools" in repair:
                     repair["tool_choice"] = "none"
                 started = time.perf_counter()
-                response = self._client.chat.completions.create(**repair)
+                response = self._complete(**repair)
                 elapsed += time.perf_counter() - started
         if self.invariants.rules:
             try:
@@ -366,7 +379,7 @@ class Agent:
         """Отдельный запрос без пользовательских настроек генерации и инструкций."""
         task = self.history.task_state
         started = time.perf_counter()
-        response = self._client.chat.completions.create(
+        response = self._complete(
             model=model,
             messages=[
                 {"role": "system", "content": CHECK_SYSTEM},
@@ -465,7 +478,7 @@ class Agent:
             # Ремонтирует только итоговый JSON, используя уже полученные результаты.
             repair["tool_choice"] = "none"
         started = time.perf_counter()
-        response = self._client.chat.completions.create(**repair)
+        response = self._complete(**repair)
         return response, time.perf_counter() - started
 
     @staticmethod
@@ -507,7 +520,7 @@ class Agent:
         records: list[ToolCallRecord] = []
         seen_ids: set[str] = set()
         for round_number in range(MAX_TOOL_ROUNDS + 1):
-            response = self._client.chat.completions.create(**request)
+            response = self._complete(**request)
             choice = response.choices[0] if response.choices else None
             calls = choice.message.tool_calls if choice is not None else None
             if not functions or not calls:
@@ -656,7 +669,7 @@ class Agent:
             request["stop"] = stop_sequences
 
         # До утверждения плана модель только обсуждает задачу.
-        use_tools = use_tools and (not active_task or task.stage in (TaskStage.EXECUTION, TaskStage.VALIDATION))
+        use_tools = self.tools_enabled and use_tools and (not active_task or task.stage in (TaskStage.EXECUTION, TaskStage.VALIDATION))
         response, elapsed, tool_calls, refusal = self._complete_with_tools(
             user, request, use_tools=use_tools, response_format=response_format,
         )

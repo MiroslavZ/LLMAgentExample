@@ -11,7 +11,7 @@ from llm_agent.history import DialogueUsage, HistoryManager
 from llm_agent.invariants import Invariant, InvariantSet
 from llm_agent.service import ConversationService
 from llm_agent.task_state import CONTINUE_TASK, TaskResponseError, TaskStage, TaskState
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation
 
 
 BROKEN = '{"answer":"public string Get() { return "рубль"; }","action":"complete_step"}'
@@ -142,7 +142,7 @@ class TaskJSONRepairTests(unittest.TestCase):
 
     def test_web_saves_one_successful_turn_and_only_verified_result(self):
         service = ConversationService(self.directory / "web", "test", invariants_path=self.directory / "rules.json")
-        conversation = service.create()
+        conversation = create_selected_conversation(service)
         history = HistoryManager(self.path)
         conversation.working_context = json.loads(self.path.read_text(encoding="utf-8"))
         service.store.save(conversation)

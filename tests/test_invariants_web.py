@@ -17,7 +17,7 @@ from llm_agent.service import ConversationService
 from llm_agent.web.app import main
 from llm_agent.web.jobs import RequestRunner
 from llm_agent.web.page import ChatPage
-from tests.helpers import completion
+from tests.helpers import completion, create_selected_conversation
 
 
 def reply(content):
@@ -38,13 +38,13 @@ class InvariantServiceTests(unittest.TestCase):
         self.service = ConversationService(self.directory / "conversations", token="test-token")
         self.rules = InvariantSet((Invariant("stack", "Использовать только Python"),))
         self.service.invariants.save(self.rules)
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.client = self.enterContext(patch("llm_agent.agent.OpenAI"))
         self.create = self.client.return_value.chat.completions.create
 
     def test_shared_file_reloads_before_each_request_and_survives_restart(self):
         self.assertEqual(self.service.invariants_path, self.directory / "invariants.json")
-        other = self.service.create()
+        other = create_selected_conversation(self.service)
         replacement = InvariantSet((Invariant("stack", "Использовать Python и SQLite"),))
         self.create.side_effect = [verdict(), reply("Ответ"), verdict()] * 2
         with patch("llm_agent.service.Agent", wraps=Agent) as agent:
@@ -132,7 +132,7 @@ class InvariantPageTests(unittest.IsolatedAsyncioTestCase):
         self.service = ConversationService(self.directory / "conversations", token="test-token")
         self.rules = InvariantSet((Invariant("stack", "Использовать только Python"),))
         self.service.invariants.save(self.rules)
-        self.conversation = self.service.create()
+        self.conversation = create_selected_conversation(self.service)
         self.runner = RequestRunner(self.service)
         self.enterContext(patch("nicegui.background_tasks.create_or_defer",
                                 side_effect=lambda coroutine, **_: coroutine.close()))
@@ -166,6 +166,7 @@ class InvariantPageTests(unittest.IsolatedAsyncioTestCase):
                 await result
 
     async def test_panel_displays_shared_rules_without_api_and_explains_configuration(self):
+        self.service.select_model(self.conversation.id, None)
         other = self.service.create()
         with self.client:
             page = self.build_page(token_available=False)
@@ -224,7 +225,8 @@ class InvariantPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page.user_input.value, "Вопрос")
         self.assertEqual(page.snapshot.turns, [])
 
-    async def test_add_edit_and_save_through_controls_without_api_key(self):
+    async def test_add_edit_and_save_through_controls_without_selected_model(self):
+        self.service.select_model(self.conversation.id, None)
         with self.client:
             page = self.build_page(token_available=False)
             page.user_input.set_value("Черновик сообщения")
@@ -270,6 +272,7 @@ class InvariantPageTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_file_can_be_configured_in_editor(self):
         self.service.invariants_path.unlink()
+        self.service.select_model(self.conversation.id, None)
         with self.client:
             panel = self.build_page(token_available=False).invariant_panel
             panel.open()

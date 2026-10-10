@@ -35,6 +35,7 @@ class ModelCLIManagementTests(unittest.TestCase):
         added = json.loads(self.run_cli("--model-add", "gemma", "--base-url", "http://localhost:1234/v1"))
         self.assertEqual(added[0]["name"], "gemma")
         self.assertFalse(added[0]["has_token"])
+        self.assertEqual(added[0]["structured_output"], "auto")
         self.run_cli("--new-conversation", "--model", "gemma")
         service = ConversationService(self.directory)
         conversation = service.list_conversations()[0]
@@ -66,10 +67,21 @@ class ModelCLIManagementTests(unittest.TestCase):
 
     def test_conflicting_actions_are_rejected_before_mutations(self):
         for args in (("--models-list", "--new-conversation"), ("--models-list", "--profile-list"),
-                     ("--model-add", "gemma"), ("--base-url", "http://localhost/v1")):
+                     ("--model-add", "gemma"), ("--base-url", "http://localhost/v1"),
+                     ("--models-list", "--model-structured-output", "json_schema"),
+                     ("--model-add", "gemma", "--base-url", "http://localhost/v1",
+                      "--model-structured-output", "invalid")):
             with self.subTest(args=args), self.assertRaises(SystemExit), patch("sys.stderr", io.StringIO()):
                 self.run_cli(*args)
         self.assertEqual(ConversationService(self.directory).models.list(), [])
+
+    def test_add_model_with_explicit_structured_output(self):
+        for mode in ("auto", "json_schema", "json_object", "off"):
+            with self.subTest(mode=mode):
+                self.run_cli("--model-add", f"gemma-{mode}", "--base-url", "http://localhost:1234/v1",
+                             "--model-structured-output", mode)
+                record = ConversationService(self.directory).models.resolve(f"gemma-{mode}")
+                self.assertEqual(record.structured_output, mode)
 
 
 if __name__ == "__main__":

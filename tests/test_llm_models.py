@@ -61,7 +61,7 @@ class LLMModelTests(unittest.TestCase):
             "model_id": (None, 1, "", "model id", "model\n", "model\x00"),
             "token": (None, 1, "Bearer token", "secret\n"),
             "timeout": (None, "30", True, 0, -1, float("nan"), float("inf"), 10 ** 1000),
-            "json_mode": (None, 0, 1, "true"),
+            "structured_output": (None, 0, 1, True, "true", "text", [], {}),
             "tools_enabled": (None, 0, 1, "false"),
         }.items():
             for value in values:
@@ -87,7 +87,7 @@ class ModelStoreTests(unittest.TestCase):
         self.store.save(self.model)
         self.assertEqual(ModelStore(self.path).get(self.model.id), self.model)
         changed = replace(self.model, name="Новое имя", model_id="gemma-new", timeout=30.5,
-                          json_mode=False, tools_enabled=False, token="changed-token")
+                          structured_output="off", tools_enabled=False, token="changed-token")
         self.store.save(changed)
         self.assertEqual(ModelStore(self.path).list(), [changed])
         self.store.delete(self.model.id)
@@ -99,7 +99,7 @@ class ModelStoreTests(unittest.TestCase):
         self.assertEqual(other.list(), [])
 
     def test_import_deduplicates_but_preserves_existing_settings_and_token(self):
-        original = replace(self.model, name="Моё имя", timeout=90, json_mode=False, tools_enabled=False)
+        original = replace(self.model, name="Моё имя", timeout=90, structured_output="off", tools_enabled=False)
         self.store.save(original)
         imported = self.store.import_models(self.model.base_url + "/", "new-token", ["gemma-4", "phi", "phi"])
         self.assertEqual(imported[0], original)
@@ -201,6 +201,104 @@ class ModelStoreTests(unittest.TestCase):
                 with self.assertRaises(ModelStorageError):
                     self.store.list()
                 self.assertEqual(self.path.read_bytes(), original)
+
+
+    def test_legacy_json_mode_is_read_without_rewriting_record(self):
+        self.store.save(self.model)
+        for flag, expected in ((True, "auto"), (False, "off")):
+            with self.subTest(flag=flag):
+                legacy = asdict(self.model)
+                del legacy["structured_output"]
+                legacy["json_mode"] = flag
+                serialized = json.dumps(legacy)
+                with closing(sqlite3.connect(self.path)) as connection, connection:
+                    connection.execute("UPDATE llm_models SET data = ?", (serialized,))
+                model = self.store.get(self.model.id)
+                self.assertEqual(model.structured_output, expected)
+                self.assertEqual(model.json_mode, flag)
+                with closing(sqlite3.connect(self.path)) as connection:
+                    self.assertEqual(connection.execute("SELECT data FROM llm_models").fetchone()[0], serialized)
+
+    def test_version_one_migrates_and_preserves_models(self):
+        self.path.parent.mkdir()
+        legacy = asdict(self.model)
+        del legacy["structured_output"]
+        legacy["json_mode"] = True
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.execute(
+                "CREATE TABLE llm_models (id TEXT PRIMARY KEY NOT NULL, base_url TEXT NOT NULL, "
+                "model_id TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(base_url, model_id))"
+            )
+            connection.execute("PRAGMA user_version = 1")
+            connection.execute("INSERT INTO llm_models VALUES (?, ?, ?, ?)",
+                               (self.model.id, self.model.base_url, self.model.model_id, json.dumps(legacy)))
+        self.assertEqual(self.store.list(), [self.model])
+        self.store.remember_detected_format(self.model, "json_schema")
+        self.assertEqual(ModelStore(self.path).get_detected_format(self.model), "json_schema")
+        with closing(sqlite3.connect(self.path)) as connection:
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
+
+    def test_legacy_and_new_formats_together_or_invalid_legacy_flag_are_corrupt(self):
+        self.store.save(self.model)
+        for settings in (
+            {**asdict(self.model), "json_mode": True},
+            {**{key: value for key, value in asdict(self.model).items() if key != "structured_output"},
+             "json_mode": "true"},
+        ):
+            with self.subTest(settings=settings):
+                with closing(sqlite3.connect(self.path)) as connection, connection:
+                    connection.execute("UPDATE llm_models SET data = ?", (json.dumps(settings),))
+                with self.assertRaises(ModelStorageError):
+                    self.store.get(self.model.id)
+
+    def test_detected_format_persists_without_changing_settings_or_optimistic_version(self):
+        self.store.save(self.model)
+        self.assertIsNone(self.store.get_detected_format(self.model))
+        self.store.remember_detected_format(self.model, "json_schema")
+        self.assertEqual(ModelStore(self.path).get_detected_format(self.model), "json_schema")
+        self.assertEqual(self.store.get(self.model.id), self.model)
+        changed = replace(self.model, name="Новое имя", timeout=90, tools_enabled=False)
+        self.store.save(changed, expected=self.model)
+        self.assertEqual(self.store.get_detected_format(changed), "json_schema")
+
+    def test_connection_or_mode_change_invalidates_detected_format(self):
+        for changes in (
+            {"base_url": "http://localhost:4321/v1"}, {"model_id": "gemma-new"},
+            {"token": "new-token"}, {"structured_output": "json_object"},
+        ):
+            with self.subTest(changes=changes):
+                self.store.save(self.model)
+                self.store.remember_detected_format(self.model, "json_schema")
+                changed = replace(self.model, **changes)
+                self.store.save(changed, expected=self.model)
+                self.assertIsNone(self.store.get_detected_format(changed))
+                self.store.save(self.model, expected=changed)
+                self.assertIsNone(self.store.get_detected_format(self.model))
+
+    def test_stale_detection_cannot_overwrite_new_settings_or_recreate_deleted_model(self):
+        self.store.save(self.model)
+        changed = replace(self.model, token="new-token")
+        self.store.save(changed)
+        self.store.remember_detected_format(changed, "json_object")
+        self.store.remember_detected_format(self.model, "json_schema")
+        self.assertEqual(self.store.get_detected_format(changed), "json_object")
+        self.assertIsNone(self.store.get_detected_format(self.model))
+        self.store.delete(changed.id)
+        self.store.remember_detected_format(changed, "json_schema")
+        self.store.save(changed)
+        self.assertIsNone(self.store.get_detected_format(changed))
+
+    def test_manual_modes_never_read_or_write_detection_cache(self):
+        for mode in ("json_schema", "json_object", "off"):
+            with self.subTest(mode=mode):
+                model = replace(self.model, structured_output=mode)
+                self.store.save(model)
+                self.store.remember_detected_format(model, "json_schema")
+                self.assertIsNone(self.store.get_detected_format(model))
+                self.assertEqual(model.json_mode, mode != "off")
+        for invalid in ("auto", "off", "text", None):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.store.remember_detected_format(self.model, invalid)
 
 
 class DiscoveryTests(unittest.TestCase):

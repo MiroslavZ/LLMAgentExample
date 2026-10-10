@@ -35,6 +35,7 @@ from .tool_events import ToolCallRecord
 from .observations import ObservationReader, is_observation
 from .rag import RAGError, Retriever
 from .rag_dialogue import prepare_turn
+from .structured_output import StructuredOutput, StructuredOutputError
 
 
 class _ConversationHistory(HistoryManager):
@@ -164,6 +165,8 @@ def _friendly_error(error: Exception) -> str:
         return "Сервис модели не ответил за отведённое время. Можно отправить запрос повторно."
     if isinstance(error, APIConnectionError):
         return "Не удалось подключиться к сервису модели. Проверьте соединение и повторите запрос."
+    if isinstance(error, StructuredOutputError):
+        return str(error)
     if isinstance(error, BadRequestError):
         return "Сервис модели отклонил запрос. Проверьте параметры и размер контекста."
     if isinstance(error, APIStatusError):
@@ -208,6 +211,22 @@ class ConversationService:
             return self.models.resolve(selected) if reference else self.models.get(selected)
         except KeyError:
             raise ValueError("Выбранная модель удалена или недоступна. Выберите другую модель.") from None
+
+    def _output_policy(self, model: LLMModel) -> StructuredOutput:
+        # Кеш — оптимизация: его временная недоступность не должна терять
+        # уже оплаченный ответ или блокировать запрос с готовым снимком модели.
+        detected = None
+        with suppress(ModelStorageError):
+            detected = self.models.get_detected_format(model)
+
+        def remember(output_format: str) -> None:
+            with suppress(ModelStorageError):
+                self.models.remember_detected_format(model, output_format)
+
+        return StructuredOutput(
+            model.structured_output, model_id=model.model_id,
+            detected=detected, on_detected=remember,
+        )
 
     def select_model(self, conversation_id: str, model_id: str | None) -> Conversation:
         with self._operation(conversation_id):
@@ -503,7 +522,7 @@ class ConversationService:
             # Неизменяемый снимок подключения на весь ход, включая служебные вызовы.
             model = self.get_model(conversation_id, options.model)
             if not model.json_mode and options.response_format != "text":
-                raise ValueError("У выбранной модели отключён JSON mode. Выберите текстовый формат ответа.")
+                raise ValueError("У выбранной модели отключён структурированный вывод. Выберите текстовый формат ответа.")
             conversation.selected_model_id = model.id
             if not conversation.started:
                 conversation.system_prompt = system_prompt
@@ -521,12 +540,14 @@ class ConversationService:
             agent = None
             compressions: list[CompressionResult] = []
             try:
+                output_policy = self._output_policy(model)
                 if conversation.settings.rag_enabled:
                     rag_settings = conversation.turns[-1].rag_settings
                     prepared = prepare_turn(
                         user.strip(), conversation.dialogue_task_memory, conversation.turns,
                         model.token, model.model_id, base_url=model.base_url, timeout=model.timeout,
                         rewrite_enabled=rag_settings.rewrite_enabled,
+                        output_policy=output_policy,
                     )
                     conversation.dialogue_task_memory = prepared["memory"]
                     conversation.turns[-1].rag_preparation = prepared["diagnostic"]
@@ -542,7 +563,7 @@ class ConversationService:
                 settings = conversation.settings
                 agent_options = {
                     "history": history, "timeout": model.timeout, "max_retries": 0,
-                    "base_url": model.base_url, "json_mode": model.json_mode,
+                    "base_url": model.base_url, "output_policy": output_policy,
                     "tools_enabled": model.tools_enabled,
                     "memory": memory,
                     "profile": profile,

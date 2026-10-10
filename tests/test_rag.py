@@ -217,6 +217,7 @@ class ConversationRAGTests(unittest.TestCase):
         self.assertEqual(rewrite.call_args.args[3:], ("test-token", "chosen-model"))
         self.assertEqual(rewrite.call_args.kwargs, {
             "rewrite_enabled": True, "base_url": model.base_url, "timeout": model.timeout,
+            "output_policy": rewrite.call_args.kwargs["output_policy"],
         })
         self.service.retriever.retrieve.assert_called_once_with(
             "Исходный вопрос", RAGSettings(rewrite_enabled=True), rewrite=rewrite_result,

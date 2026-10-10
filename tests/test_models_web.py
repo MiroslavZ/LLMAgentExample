@@ -84,6 +84,7 @@ class ModelPageTests(unittest.IsolatedAsyncioTestCase):
             saved, = self.service.models.list()
             self.assertEqual(saved.name, "gemma")
             self.assertEqual(saved.token, "")
+            self.assertEqual(saved.structured_output, "auto")
             self.assertIsNone(self.page.model_selector.value)
             self.assertFalse(self.page.send_button.enabled)
             self.page.model_selector.set_value(saved.id)
@@ -143,13 +144,13 @@ class ModelPageTests(unittest.IsolatedAsyncioTestCase):
             self.panel.id_input.set_value("gemma-v2")
             self.panel.url_input.set_value("http://localhost:4321/v1")
             self.panel.timeout_input.set_value(240)
-            self.panel.json_input.set_value(False)
+            self.panel.structured_output_input.set_value("off")
             self.panel.tools_input.set_value(False)
             self.panel.save()
             saved = self.service.models.get(model.id)
             self.assertEqual(saved, replace(model, name="Моя Gemma", model_id="gemma-v2",
                                             base_url="http://localhost:4321/v1", timeout=240,
-                                            json_mode=False, tools_enabled=False))
+                                            structured_output="off", tools_enabled=False))
             self.panel.edit()
             self.panel.token_input.set_value("replacement-token")
             self.panel.save()
@@ -193,6 +194,22 @@ class ModelPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.page.user_input.value, "Важный черновик")
         self.assertEqual(len(self.service.list_conversations()), 1)
         self.assertTrue(any("удалена" in text for text in self.labels(self.page.banner)))
+
+    async def test_structured_output_selector_saves_and_restores_each_mode(self):
+        model = self.add_model()
+        with self.client:
+            self.panel.open()
+            self.assertEqual(self.panel.structured_output_input.options, {
+                "auto": "Авто", "json_schema": "JSON Schema", "json_object": "JSON Object", "off": "Отключён",
+            })
+            for mode in ("json_schema", "json_object", "off", "auto"):
+                with self.subTest(mode=mode):
+                    self.panel.edit()
+                    self.panel.structured_output_input.set_value(mode)
+                    self.panel.save()
+                    self.assertEqual(self.service.models.get(model.id).structured_output, mode)
+                    self.panel.edit()
+                    self.assertEqual(self.panel.structured_output_input.value, mode)
 
     async def test_external_catalog_changes_refresh_selector_and_send_availability(self):
         model = self.add_model()

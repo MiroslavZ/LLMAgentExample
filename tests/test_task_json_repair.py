@@ -77,7 +77,7 @@ class TaskJSONRepairTests(unittest.TestCase):
         self.assertNotIn("stop", repair)
         self.assertEqual(repair["temperature"], 0)
         self.assertEqual(repair["max_tokens"], 800)
-        self.assertEqual(repair["response_format"], {"type": "json_object"})
+        self.assertEqual(repair["response_format"]["type"], "json_schema")
         self.assertNotIn(TASK_RESPONSE_RETRY_SYSTEM, self.path.read_text(encoding="utf-8"))
 
     def test_second_bad_json_stops_with_actionable_error_and_counts_both_responses(self):

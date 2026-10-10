@@ -64,10 +64,14 @@ class ModelsPanel:
                 self.token_hint = ui.label().classes("memory-description")
                 self.remove_token = ui.checkbox("Удалить сохранённый токен", value=False)
                 self.timeout_input = ui.number("Таймаут запроса, секунд", value=180, min=1).props("outlined dense").classes("w-full")
-                self.json_input = ui.checkbox("Использовать JSON mode (response_format)", value=True)
+                self.structured_output_input = ui.select(
+                    {"auto": "Авто", "json_schema": "JSON Schema", "json_object": "JSON Object", "off": "Отключён"},
+                    label="Формат структурированного ответа", value="auto",
+                ).props("outlined dense").classes("w-full")
                 self.tools_input = ui.checkbox("Модель поддерживает инструменты (tool calling)", value=True)
                 ui.label(
-                    "Если сервер не поддерживает JSON mode или инструменты, отключите соответствующую возможность. "
+                    "Режим «Авто» проверяет поддержку JSON Schema, затем JSON Object и запоминает успешный формат. "
+                    "При отключённом формате модель получает только инструкцию вернуть JSON. "
                     "Для локального сервера без авторизации токен не нужен."
                 ).classes("memory-description")
                 with ui.row().classes("w-full justify-end"):
@@ -134,7 +138,7 @@ class ModelsPanel:
         enabled = self._available and not self._busy
         for control in (self.selector, self.new_button, self.save_button, self.name_input,
                         self.id_input, self.url_input, self.token_input, self.remove_token,
-                        self.timeout_input, self.json_input, self.tools_input,
+                        self.timeout_input, self.structured_output_input, self.tools_input,
                         self.server_url, self.server_token, self.discover_button, self.discovered):
             control.set_enabled(enabled)
         for control in (self.edit_button, self.delete_button):
@@ -158,7 +162,7 @@ class ModelsPanel:
         self.remove_token.set_value(False)
         self.remove_token.set_visibility(False)
         self.timeout_input.set_value(180)
-        self.json_input.set_value(True)
+        self.structured_output_input.set_value("auto")
         self.tools_input.set_value(True)
         self.editor.set_visibility(True)
 
@@ -179,7 +183,7 @@ class ModelsPanel:
         self.remove_token.set_value(False)
         self.remove_token.set_visibility(bool(self._editing.token))
         self.timeout_input.set_value(self._editing.timeout)
-        self.json_input.set_value(self._editing.json_mode)
+        self.structured_output_input.set_value(self._editing.structured_output)
         self.tools_input.set_value(self._editing.tools_enabled)
         self.editor.set_visibility(True)
 
@@ -197,7 +201,7 @@ class ModelsPanel:
                 id=self._editing.id if self._editing else uuid4().hex,
                 name=(self.name_input.value or "").strip() or model_id,
                 model_id=model_id, base_url=(self.url_input.value or "").strip(), token=token,
-                timeout=self.timeout_input.value, json_mode=self.json_input.value,
+                timeout=self.timeout_input.value, structured_output=self.structured_output_input.value,
                 tools_enabled=self.tools_input.value,
             )
             self.store.save(model, expected=self._editing)

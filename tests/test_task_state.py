@@ -179,7 +179,7 @@ class TaskIntegrationTests(unittest.TestCase):
         self.create.return_value = reply("complete_step", "add(2, 3) == 5")
         result = self.agent(strategy="window", window_size=1).request(CONTINUE_TASK)
         self.assertEqual(result.content, "add(2, 3) == 5")
-        self.assertEqual(self.create.call_args.kwargs["response_format"], {"type": "json_object"})
+        self.assertEqual(self.create.call_args.kwargs["response_format"]["type"], "json_schema")
         messages = self.create.call_args.kwargs["messages"]
         prompt = next(message["content"] for message in messages if "<task_state>" in message["content"])
         for value in ("Написать функцию сложения", "Только Python", "def add", '"step": 1', "Примеры"):

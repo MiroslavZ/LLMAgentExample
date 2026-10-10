@@ -10,6 +10,10 @@ from openai.types.chat import ChatCompletion
 
 from .branch_history import BranchHistoryManager
 from .llm_client import connection_options
+from .structured_output import StructuredOutput
+from .response_schemas import (
+    FACTS_SCHEMA, INVARIANT_SCHEMA, RAG_ANSWER_SCHEMA, schema_format, task_response_format,
+)
 from .history import DEFAULT_HISTORY_PATH, DialogueUsage, HistoryManager, Message, TokenUsage
 from .context_strategy import SUPPORTED_STRATEGIES, FactsStrategy, WindowStrategy
 from .memory import MemorySnapshot
@@ -122,7 +126,9 @@ class Agent:
         rag_threshold: float = 0.35,
         dialogue_task_memory: dict | None = None,
         base_url: str = BASE_URL,
-        json_mode: bool = True,
+        json_mode: bool | None = None,
+        structured_output: str = "auto",
+        output_policy: StructuredOutput | None = None,
         tools_enabled: bool = True,
     ) -> None:
         if strategy is not None and strategy not in SUPPORTED_STRATEGIES:
@@ -160,7 +166,9 @@ class Agent:
         self.rag_context = deepcopy(rag_context)
         self.rag_threshold = rag_threshold
         self.dialogue_task_memory = deepcopy(dialogue_task_memory)
-        self.json_mode = json_mode
+        if json_mode is not None:
+            structured_output = "auto" if json_mode else "off"
+        self.output_policy = output_policy or StructuredOutput(structured_output)
         self.tools_enabled = tools_enabled
         self.history = history if history is not None else (
             BranchHistoryManager(history_path, branch=branch) if strategy == "branch"
@@ -175,10 +183,7 @@ class Agent:
 
     def _complete(self, **request) -> ChatCompletion:
         """Применить возможности сервера одинаково ко всем вызовам модели."""
-        response_format = request.get("response_format", {})
-        if response_format.get("type") == "text" or not self.json_mode:
-            request.pop("response_format", None)
-        return self._client.chat.completions.create(**request)
+        return self.output_policy.complete(self._client.chat.completions.create, **request)
 
     def close(self) -> None:
         """Освободить HTTP-соединения после использования агента сервером."""
@@ -203,7 +208,7 @@ class Agent:
                     "user_message": user,
                 }, ensure_ascii=False)},
             ],
-            response_format={"type": "json_object"},
+            response_format=schema_format("facts_delta", FACTS_SCHEMA, strict=False),
         )
         choice = response.choices[0]
         content = choice.message.content
@@ -395,7 +400,7 @@ class Agent:
                     "proposed_task_state": proposed_task.to_dict() if proposed_task is not None else None,
                 }, ensure_ascii=False)},
             ],
-            response_format={"type": "json_object"},
+            response_format=schema_format("invariant_verdict", INVARIANT_SCHEMA),
             temperature=0,
         )
         elapsed = time.perf_counter() - started
@@ -656,10 +661,16 @@ class Agent:
                     )
                 messages.insert(1, {"role": "system", "content": contract})
 
+        if active_task:
+            output_format = task_response_format(task, rag=self.rag_context is not None and rag_final)
+        elif self.rag_context is not None and rag_final:
+            output_format = schema_format("rag_answer", RAG_ANSWER_SCHEMA)
+        else:
+            output_format = RESPONSE_FORMATS[response_format]
         request = {
             "model": model,
             "messages": messages,
-            "response_format": RESPONSE_FORMATS["object" if active_task or self.rag_context is not None and rag_final else response_format],
+            "response_format": output_format,
         }
         if max_tokens is not None:
             request["max_tokens"] = max_tokens

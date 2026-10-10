@@ -266,7 +266,7 @@ class AgentProfileTests(unittest.TestCase):
         self.assertEqual(meta.kwargs["messages"][0]["content"], META_PROMPT_SYSTEM)
         self.assertNotIn("response_format", meta.kwargs)
         self.assertEqual(answer.kwargs["messages"][0]["content"], "Базовые правила")
-        self.assertEqual(answer.kwargs["response_format"], {"type": "json_object"})
+        self.assertEqual(answer.kwargs["response_format"]["type"], "json_schema")
         self.assertEqual(compressed.kwargs["messages"][0]["content"], SUMMARY_SYSTEM)
         self.assert_no_profile(compressed.kwargs["messages"])
         self.assert_no_profile(json.loads(path.read_text(encoding="utf-8")))

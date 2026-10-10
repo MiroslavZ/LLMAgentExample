@@ -6,6 +6,8 @@ from copy import deepcopy
 
 from openai import OpenAI
 from .llm_client import connection_options
+from .structured_output import StructuredOutput, StructuredOutputError
+from .response_schemas import RAG_PREPARATION_SCHEMA, schema_format
 
 
 _GROUPS = ("clarifications", "constraints", "terms")
@@ -151,7 +153,7 @@ def _unique_object(pairs):
 
 def prepare_turn(question: str, memory: dict, turns: list, token: str, model: str,
                  *, rewrite_enabled: bool, base_url: str | None = None,
-                 timeout: float = 15.0) -> dict:
+                 timeout: float = 15.0, output_policy: StructuredOutput | None = None) -> dict:
     """Один вызов извлекает изменения памяти и независимо переписывает запрос.
 
     turns включает текущий running-ход. Usage и время учитываются только в diagnostic.
@@ -171,8 +173,10 @@ def prepare_turn(question: str, memory: dict, turns: list, token: str, model: st
         payload = dict(current_user=question, memory=memory, recent_turns=_tail(turns[:-1]),
                        rewrite_enabled=rewrite_enabled)
         with OpenAI(**connection_options(base_url or BASE_URL, token), timeout=timeout, max_retries=0) as client:
-            response = client.chat.completions.create(
+            response = (output_policy or StructuredOutput()).complete(
+                client.chat.completions.create,
                 model=model, temperature=0, max_tokens=2500,
+                response_format=schema_format("rag_preparation", RAG_PREPARATION_SCHEMA),
                 messages=[{"role": "system", "content": DIALOGUE_INSTRUCTION},
                           {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
             )
@@ -196,6 +200,9 @@ def prepare_turn(question: str, memory: dict, turns: list, token: str, model: st
                 rewrite.update(query=query.strip(), status="success")
             else:
                 rewrite["reason"] = "Некорректный поисковый запрос; использован исходный вопрос."
+    except StructuredOutputError:
+        # Отсутствие поддержки обоих форматов требует явного выбора пользователя.
+        raise
     except Exception:
         # Не выводим исключения SDK: они могут содержать токен и пользовательские данные.
         diagnostic["reason"] = "Не удалось подготовить диалог; прежняя память сохранена."

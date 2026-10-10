@@ -85,12 +85,12 @@ class FactsTests(unittest.TestCase):
         )
         update, answer = self.create.call_args_list
         self.assertEqual(update.kwargs["model"], "selected-model")
-        self.assertEqual(update.kwargs["response_format"], {"type": "json_object"})
+        self.assertEqual(update.kwargs["response_format"]["type"], "json_schema")
         for parameter in ("temperature", "max_tokens", "stop"):
             self.assertNotIn(parameter, update.kwargs)
         self.assertEqual(self.update_payload()["user_message"], "Меня зовут Мирослав")
         self.assertTrue(self.update_payload()["initialize"])
-        self.assertEqual(answer.kwargs["response_format"], {"type": "json_object"})
+        self.assertEqual(answer.kwargs["response_format"]["type"], "json_schema")
         self.assertEqual(answer.kwargs["stop"], ["STOP"])
         self.assertEqual(len(answer.kwargs["messages"]), 3)  # system + facts + текущий user
         self.assertEqual(answer.kwargs["messages"][-1]["role"], "user")

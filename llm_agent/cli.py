@@ -91,6 +91,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base-url", help="Адрес OpenAI-совместимого API для --model-add")
     parser.add_argument("--model-name", help="Отображаемое имя при --model-add (по умолчанию API ID)")
     parser.add_argument("--model-token-env", help="Имя переменной окружения с токеном при добавлении/загрузке моделей")
+    parser.add_argument(
+        "--model-structured-output", choices=("auto", "json_schema", "json_object", "off"),
+        help="Формат структурированного ответа при --model-add (по умолчанию auto)",
+    )
     parser.add_argument("--system", help="Системный промпт диалога (сохраняется, если ещё не задан)")
     parser.add_argument("--user", help="Текст запроса; необязателен для управления диалогами, памятью, профилями, задачей и инвариантами")
     parser.add_argument("--batch", action="store_true", help="Один запрос для планировщика: --conversation и --user; результат в JSON")
@@ -262,8 +266,8 @@ def parse_args() -> argparse.Namespace:
     model_management = args.models_list or args.models_discover or args.models_import or args.model_add
     if args.model_add and not args.base_url:
         parser.error("--model-add требует --base-url")
-    if (args.base_url or args.model_name) and not args.model_add:
-        parser.error("--base-url и --model-name используются с --model-add")
+    if (args.base_url or args.model_name or args.model_structured_output) and not args.model_add:
+        parser.error("--base-url, --model-name и --model-structured-output используются с --model-add")
     if args.model_token_env and not (args.model_add or args.models_discover or args.models_import):
         parser.error("--model-token-env требует добавления или загрузки моделей")
     if model_management and (args.user is not None or args.conversation or args.new_conversation or args.batch):
@@ -764,11 +768,12 @@ def manage_models(args: argparse.Namespace, service: ConversationService) -> boo
         service.models.save(LLMModel(
             id=uuid4().hex, name=args.model_name or args.model_add,
             model_id=args.model_add, base_url=args.base_url, token=token,
+            structured_output=args.model_structured_output or "auto",
         ))
     print_json([
         {"id": model.id, "name": model.name, "model_id": model.model_id,
          "base_url": model.base_url, "has_token": bool(model.token),
-         "timeout": model.timeout, "json_mode": model.json_mode,
+         "timeout": model.timeout, "structured_output": model.structured_output,
          "tools_enabled": model.tools_enabled}
         for model in service.models.list()
     ])

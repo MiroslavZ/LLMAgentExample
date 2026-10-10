@@ -81,12 +81,17 @@ class LLMModel:
     base_url: str
     token: str = field(default="", repr=False)
     timeout: float = 180
-    json_mode: bool = True
+    structured_output: str = "auto"
     tools_enabled: bool = True
 
     def __post_init__(self) -> None:
         self.validate()
         object.__setattr__(self, "base_url", _normalize_url(self.base_url))
+
+    @property
+    def json_mode(self) -> bool:
+        """Совместимость чтения прежнего флага поддержки JSON."""
+        return self.structured_output != "off"
 
     def validate(self) -> None:
         if not isinstance(self.id, str) or re.fullmatch(r"[0-9a-f]{32}", self.id) is None:
@@ -107,8 +112,12 @@ class LLMModel:
             valid_timeout = False
         if not valid_timeout:
             raise ValueError("Таймаут модели должен быть положительным конечным числом секунд")
-        if type(self.json_mode) is not bool or type(self.tools_enabled) is not bool:
-            raise ValueError("Поддержка JSON и инструментов должна задаваться логическими значениями")
+        if not isinstance(self.structured_output, str) or self.structured_output not in {
+            "auto", "json_schema", "json_object", "off",
+        }:
+            raise ValueError("Выберите формат структурированного ответа: auto, json_schema, json_object или off")
+        if type(self.tools_enabled) is not bool:
+            raise ValueError("Поддержка инструментов должна задаваться логическим значением")
 
 
 class ModelStore:
@@ -123,10 +132,11 @@ class ModelStore:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             connection = sqlite3.connect(self.path, timeout=1.0)
+            connection.execute("PRAGMA foreign_keys = ON")
             with connection:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version not in (0, 1):
+                if version not in (0, 1, 2):
                     raise ModelStorageError("Неподдерживаемая версия каталога моделей. Файл сохранён без изменений.")
                 if version == 0:
                     if connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall():
@@ -136,7 +146,13 @@ class ModelStore:
                         "id TEXT PRIMARY KEY NOT NULL, base_url TEXT NOT NULL, model_id TEXT NOT NULL, "
                         "data TEXT NOT NULL, UNIQUE(base_url, model_id))"
                     )
-                    connection.execute("PRAGMA user_version = 1")
+                if version < 2:
+                    connection.execute(
+                        "CREATE TABLE llm_model_formats ("
+                        "model_key TEXT PRIMARY KEY NOT NULL REFERENCES llm_models(id) ON DELETE CASCADE, "
+                        "format TEXT NOT NULL CHECK(format IN ('json_schema', 'json_object')))"
+                    )
+                    connection.execute("PRAGMA user_version = 2")
                 yield connection
         except (OSError, sqlite3.Error):
             raise ModelStorageError(
@@ -149,7 +165,14 @@ class ModelStore:
     @staticmethod
     def _decode(model_key: str, base_url: str, model_id: str, data: str) -> LLMModel:
         try:
-            model = LLMModel(**json.loads(data))
+            settings = json.loads(data)
+            if not isinstance(settings, dict):
+                raise ValueError
+            if "json_mode" in settings:
+                if "structured_output" in settings or type(settings["json_mode"]) is not bool:
+                    raise ValueError
+                settings["structured_output"] = "auto" if settings.pop("json_mode") else "off"
+            model = LLMModel(**settings)
             if (model.id, model.base_url, model.model_id) != (model_key, base_url, model_id):
                 raise ValueError
             return model
@@ -196,6 +219,44 @@ class ModelStore:
                 "ON CONFLICT(id) DO UPDATE SET "
                 "base_url = excluded.base_url, model_id = excluded.model_id, data = excluded.data",
                 (model.id, model.base_url, model.model_id, json.dumps(asdict(model), ensure_ascii=False)),
+            )
+            if current is not None and any(
+                getattr(current, name) != getattr(model, name)
+                for name in ("base_url", "model_id", "token", "structured_output")
+            ):
+                connection.execute("DELETE FROM llm_model_formats WHERE model_key = ?", (model.id,))
+
+    def get_detected_format(self, model: LLMModel) -> str | None:
+        """Прочесть автоопределённый формат для актуального снимка настроек."""
+        if model.structured_output != "auto":
+            return None
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT id, base_url, model_id, data FROM llm_models WHERE id = ?", (model.id,)
+            ).fetchone()
+            if row is None or self._decode(*row) != model:
+                return None
+            detected = connection.execute(
+                "SELECT format FROM llm_model_formats WHERE model_key = ?", (model.id,)
+            ).fetchone()
+            return detected[0] if detected is not None else None
+
+    def remember_detected_format(self, model: LLMModel, format: str) -> None:
+        """Сохранить успешную проверку, если настройки не изменились за время запроса."""
+        if format not in ("json_schema", "json_object"):
+            raise ValueError("Можно сохранить только подтверждённый формат json_schema или json_object")
+        if model.structured_output != "auto":
+            return
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT id, base_url, model_id, data FROM llm_models WHERE id = ?", (model.id,)
+            ).fetchone()
+            if row is None or self._decode(*row) != model:
+                return
+            connection.execute(
+                "INSERT INTO llm_model_formats (model_key, format) VALUES (?, ?) "
+                "ON CONFLICT(model_key) DO UPDATE SET format = excluded.format",
+                (model.id, format),
             )
 
     def delete(self, model_id: str, *, expected: LLMModel | None = None) -> None:

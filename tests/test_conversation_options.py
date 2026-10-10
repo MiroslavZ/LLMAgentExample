@@ -39,7 +39,7 @@ class ConversationOptionsTests(unittest.TestCase):
                 kwargs = self.create_completion.call_args.kwargs
                 self.assertEqual(kwargs["model"], "custom-model")
                 self.assertEqual(kwargs["stop"], ["STOP"])
-                self.assertEqual(kwargs["response_format"], {"type": "json_object"})
+                self.assertEqual(kwargs["response_format"]["type"], "json_schema")
                 self.assertEqual(kwargs["temperature"], 0.3)
                 self.assertEqual(kwargs["max_tokens"], 500)
                 self.assertEqual(len(responses), 2 if meta_prompt else 1)

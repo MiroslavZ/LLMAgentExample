@@ -131,6 +131,7 @@ class Turn:
     rag_settings: RAGSettings | None = None
     rag_answer: dict | None = None
     rag_preparation: dict | None = None
+    project_help: dict | None = None
     model_id: str | None = None
     model_name: str | None = None
     model_base_url: str | None = None

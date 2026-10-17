@@ -164,7 +164,7 @@ def render_turn(turn: Turn, *, restore: Callable[[], None], busy: bool) -> None:
                         ui.label(f"{turn.elapsed_seconds:.1f} с").classes("message-time")
                 if turn.answer:
                     answer = (render_answer(turn.rag_answer, turn.options.response_format)
-                              if turn.rag_answer is not None else turn.answer)
+                              if turn.rag_answer is not None and turn.project_help is None else turn.answer)
                     ui.markdown(answer).classes("message-markdown")
                 else:
                     ui.label("Модель вернула пустой ответ.").classes("muted")

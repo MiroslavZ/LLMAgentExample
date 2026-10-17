@@ -5,6 +5,11 @@
 не нужен. Чат, память диалогов и MCP не участвуют в построении индекса.
 Подключение готового индекса к ответам агента описано в [RAG.md](RAG.md).
 
+Стандартный корпус `examples/indexing/corpus.json` включает README и актуальные
+руководства `docs/` по проекту. Существующий `my-corpus.json` также обновлён этим
+набором документов. Учебная переписка, задания, планы и отчёты не включены.
+Обычный RAG и `/help` используют один индекс, заданный через `RAG_INDEX_PATH`.
+
 ## Запуск
 
 Используйте Python 3.11+ и окружение проекта с зависимостями `requirements.txt`:
@@ -33,7 +38,7 @@ python -m llm_agent.indexing compare --cache-dir data/model-cache
 
 ```powershell
 .\venv\Scripts\python.exe -m llm_agent.indexing build --corpus my-corpus.json --strategy structural --model intfloat/multilingual-e5-base --output-dir data/indexes-e5-base --cache-dir data/model-cache --batch-size 8
-.\venv\Scripts\python.exe -m llm_agent.indexing search "В каком задании нужны цитаты и источники?" --output-dir data/indexes-e5-base --cache-dir data/model-cache --offline
+.\venv\Scripts\python.exe -m llm_agent.indexing search "Как устроена память агента?" --output-dir data/indexes-e5-base --cache-dir data/model-cache --offline
 ```
 
 Аналогично можно выбрать `intfloat/multilingual-e5-large`, `BAAI/bge-m3`,
@@ -99,12 +104,12 @@ RuBERT — базовая языковая модель, не специализ
 
 ## Корпус и разбиение
 
-Список хранится в `examples/indexing/corpus.json`: README, MCP, ORCHESTRATION,
-SCHEDULING, INVARIANTS, TASK_STATE, MEMORY, PERSONALIZATION. Это 8 документов,
-106 805 символов и 13 297 слов после нормализации. При условных 3 000 символов
-на страницу получается **35,6 страницы**. Слова считаются разделением по пробелам;
-это оценка объёма с разметкой и кодом, а не число страниц печатного PDF.
-Корпус не содержит контрольные вопросы и этот отчёт.
+Список хранится в `examples/indexing/corpus.json`: README и 12 руководств `docs/`,
+включая структуру проекта, `/help`, MCP, память, модели, RAG и индексацию.
+Текущий объём показывает `python -m llm_agent.indexing corpus`.
+Слова считаются разделением по пробелам; число условных страниц по 3 000 символов
+оценивает объём текста с разметкой и кодом, а не печатного PDF.
+Контрольные вопросы, учебные планы, переписка и отчёты экспериментов исключены.
 
 Поддерживаются UTF-8 Markdown и TXT; BOM удаляется, CRLF/CR приводятся к LF.
 Нет рекурсивного сканирования, PDF/OCR или загрузки URL. Пути вне корня,

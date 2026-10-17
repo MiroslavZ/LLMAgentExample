@@ -55,8 +55,10 @@ python -m llm_agent.rag_dialogue_evaluation --index data/indexes/structural.sqli
 ## Подключение индекса
 
 По умолчанию используется `data/indexes/structural.sqlite3` относительно корня
-проекта. В этом рабочем каталоге он уже собран на RuBERT по полному корпусу.
-Достаточно запустить `python -m llm_agent.web` и включить RAG.
+проекта. В этом рабочем каталоге он собран на `intfloat/multilingual-e5-base`
+по README и актуальным руководствам `docs/` из `examples/indexing/corpus.json`.
+Этот же индекс используется командой `/help`. Для обычных вопросов включите RAG;
+команда `/help` запускает поиск независимо от общего переключателя.
 Чтобы вместо него использовать ранее подготовленный пользовательский индекс,
 задайте перед запуском CLI или сервера:
 
@@ -71,13 +73,12 @@ python -m llm_agent.web
 `RAG_CACHE_DIR` задаёт каталог кеша Hugging Face; относительный путь считается
 от рабочего каталога процесса, как `--cache-dir` индексатора.
 
-Существующий `data/my-indexes` не содержит `docs/MEMORY.md`, необходимый для
-первых трёх контрольных вопросов. Стандартный корпус включает его. Чтобы
-создать полный индекс отдельно от существующего, с уже закешированной RuBERT:
+Чтобы обновить общий индекс после изменения документации, с уже закешированной E5-base:
 
 ```powershell
-python -m llm_agent.indexing build --strategy structural --model DeepPavlov/rubert-base-cased --revision 4036cab694767a299f2b9e6492909664d9414229 --offline
+python -m llm_agent.indexing build --strategy structural --model intfloat/multilingual-e5-base --cache-dir data/model-cache --offline
 $env:RAG_INDEX_PATH = "data/indexes/structural.sqlite3"
+$env:RAG_CACHE_DIR = "data/model-cache"
 ```
 
 Поиск загружает модель и ревизию из метаданных индекса, проверяет совпадение

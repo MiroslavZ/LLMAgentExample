@@ -23,6 +23,7 @@ from .mcp_config import MCPServer
 from .mcp_tools import MAX_TOOL_CALLS, MAX_TOOL_ROUNDS, MCP_SYSTEM, MCPToolCatalog, MCPToolError
 from .tool_events import ToolCallRecord
 from .observations import OBSERVATIONS_SYSTEM, TOOL_NAME, ObservationReader
+from .project_help import HELP_ANSWER_INSTRUCTION, HELP_ANSWER_SCHEMA, parse_help_answer, render_help
 from .task_state import (
     CONTINUE_TASK, PLAN_APPROVAL_REQUIRED, STAGE_ACTIONS,
     TaskJSONError, TaskResponseError, TaskStage, TaskState, TaskStateError,
@@ -120,9 +121,11 @@ class Agent:
         profile: UserProfile | None = None,
         invariants: InvariantSet | None = None,
         mcp_servers: Sequence[MCPServer] = (),
+        tool_catalog: MCPToolCatalog | None = None,
         on_tool_call: Callable[[ToolCallRecord], None] | None = None,
         observations: ObservationReader | None = None,
         rag_context: dict | None = None,
+        project_help_context: dict | None = None,
         rag_threshold: float = 0.35,
         dialogue_task_memory: dict | None = None,
         base_url: str = BASE_URL,
@@ -162,8 +165,11 @@ class Agent:
         for server in self.mcp_servers:
             server.validate()
         self.on_tool_call = on_tool_call
+        self.tool_catalog = tool_catalog
         self.observations = observations
         self.rag_context = deepcopy(rag_context)
+        # Каталог обновляет этот контекст до сохранения tool call и следующего ответа LLM.
+        self.project_help_context = project_help_context
         self.rag_threshold = rag_threshold
         self.dialogue_task_memory = deepcopy(dialogue_task_memory)
         if json_mode is not None:
@@ -291,6 +297,10 @@ class Agent:
         chunks = self.rag_context["chunks"]
         if chunks and max(chunk["score"] for chunk in chunks) >= self.rag_threshold:
             return None
+        if self.project_help_context is not None:
+            # Пустая документация не блокирует выбор инструмента моделью.
+            self.rag_context["chunks"] = []
+            return None
         from .rag_answer import render_answer, unknown_answer
 
         result = unknown_answer()
@@ -319,7 +329,10 @@ class Agent:
                 if choice is None or choice.finish_reason != "stop":
                     raise ValueError("Ответ RAG не завершён")
                 if task is None:
-                    result = parse_answer(candidate, self.rag_context)
+                    result = (
+                        parse_help_answer(candidate, self.rag_context, self.project_help_context)
+                        if self.project_help_context is not None else parse_answer(candidate, self.rag_context)
+                    )
                 else:
                     payload = load_answer_payload(candidate)
                     if not isinstance(payload, dict) or not isinstance(payload.get("rag"), dict):
@@ -333,7 +346,10 @@ class Agent:
                     payload["answer"] = render_answer(result)
                     _, proposed = task.apply_reply(user, json.dumps(payload, ensure_ascii=False))
                     updated_task = proposed if result["status"] == "answered" else None
-                answer = render_answer(result, response_format)
+                answer = (
+                    render_help(self.project_help_context, result, response_format)
+                    if self.project_help_context is not None else render_answer(result, response_format)
+                )
                 break
             except (ValueError, TypeError, RecursionError) as error:
                 self.history.record_response_usage(tokens)
@@ -374,7 +390,7 @@ class Agent:
         safe_response.choices[0].message.content = answer
         return RequestResult(
             safe_response, elapsed, self.history.get_usage(), answer=answer,
-            refused=result["status"] == "unknown", tool_calls=tool_calls, rag_answer=result,
+            refused=result is not None and result["status"] == "unknown", tool_calls=tool_calls, rag_answer=result,
         )
 
     def _check_invariants(
@@ -510,7 +526,7 @@ class Agent:
     ) -> tuple[ChatCompletion, float, tuple[ToolCallRecord, ...], RequestResult | None]:
         started = time.perf_counter()
         servers = [server for server in self.mcp_servers if server.enabled] if use_tools else []
-        catalog = MCPToolCatalog.discover(servers)
+        catalog = self.tool_catalog if use_tools and self.tool_catalog is not None else MCPToolCatalog.discover(servers)
         reader = self.observations if use_tools else None
         functions = [*catalog.functions]
         instructions = MCP_SYSTEM if catalog.functions else ""
@@ -651,7 +667,7 @@ class Agent:
             if rag_final:
                 from .rag_answer import RAG_ANSWER_INSTRUCTION
 
-                contract = RAG_ANSWER_INSTRUCTION
+                contract = HELP_ANSWER_INSTRUCTION if self.project_help_context is not None else RAG_ANSWER_INSTRUCTION
                 if active_task:
                     contract += (
                         " Для активной задачи объедини протоколы: answer, action и допустимый plan "
@@ -664,7 +680,10 @@ class Agent:
         if active_task:
             output_format = task_response_format(task, rag=self.rag_context is not None and rag_final)
         elif self.rag_context is not None and rag_final:
-            output_format = schema_format("rag_answer", RAG_ANSWER_SCHEMA)
+            output_format = (
+                schema_format("project_help_answer", HELP_ANSWER_SCHEMA)
+                if self.project_help_context is not None else schema_format("rag_answer", RAG_ANSWER_SCHEMA)
+            )
         else:
             output_format = RESPONSE_FORMATS[response_format]
         request = {

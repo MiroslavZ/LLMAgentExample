@@ -2,6 +2,38 @@
 
 Агент на Python с выбором локальных и облачных моделей через OpenAI-совместимый API.
 
+## Ассистент разработчика — день 31
+
+Команда `/help` в веб-чате и CLI объясняет структуру проекта по README и актуальным
+руководствам `docs/`. `/help <вопрос>` отвечает на конкретный вопрос с источниками
+и проверенными цитатами. Модель сама решает, нужен ли MCP-инструмент: вопросы
+по документации используют RAG, а текущая Git-ветка запрашивается через локальный
+сервер, когда нужна для ответа. Источники и выполненные вызовы сохраняются в истории.
+Общий переключатель RAG и состояние активной задачи команда не меняет.
+
+```powershell
+# В отдельном терминале; окружение MCP уже находится в LocalMCPServer/venv
+.\LocalMCPServer\venv\Scripts\python.exe LocalMCPServer/server.py
+# Основное окружение агента:
+python -m llm_agent.indexing build --strategy structural --model intfloat/multilingual-e5-base --cache-dir data/model-cache
+python main.py --new-conversation --mcp-url http://127.0.0.1:8001/mcp
+# Сначала выберите модель в каталоге; MODEL — её ID или уникальное имя:
+python main.py --new-conversation --model MODEL --user "/help"
+python main.py --conversation ID --user "/help Какая сейчас Git-ветка?"
+```
+
+Команда использует общий индекс RAG `data/indexes/structural.sqlite3`;
+путь можно изменить через `RAG_INDEX_PATH`. Корпус README и руководств `docs/`
+задан в `examples/indexing/corpus.json`.
+Для этого кэша добавьте `RAG_CACHE_DIR=data/model-cache` в `.env` и перезапустите
+агента. В веб-чате подключите `http://127.0.0.1:8001/mcp` через менеджер MCP,
+оставьте токен пустым и включите **Использовать в чате**; повторное подключение
+не требуется, если оно уже сохранено через CLI. Для Git-вопросов выберите модель
+с поддержкой tool calling и включите инструменты в её настройках.
+
+[Настройка, пересборка индекса и проверка /help](docs/PROJECT_HELP.md) ·
+[Структура проекта](docs/PROJECT_STRUCTURE.md) · [Локальный MCP-сервер](LocalMCPServer/README.md).
+
 ## Каталог моделей и локальная LLM — день 26
 
 При первом запуске каталог пустой. В шапке веб-чата выберите **Менеджер моделей**:

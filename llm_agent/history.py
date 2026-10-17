@@ -288,7 +288,7 @@ class HistoryManager:
 
     def add_rag_exchange(
         self, user: str, assistant: str, usage: TokenUsage | None, *,
-        rag_answer: dict, task_state: TaskState | None = None,
+        rag_answer: dict | None, task_state: TaskState | None = None,
     ) -> None:
         """Сохранить проверенный финал; адаптер сервиса также сохраняет доказательства."""
         self.add_exchange(user, assistant, usage, task_state=task_state)

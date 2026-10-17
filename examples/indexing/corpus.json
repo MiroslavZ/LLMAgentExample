@@ -1,12 +1,17 @@
 {
   "files": [
     "README.md",
+    "docs/PROJECT_STRUCTURE.md",
+    "docs/PROJECT_HELP.md",
     "docs/MCP.md",
     "docs/ORCHESTRATION.md",
     "docs/SCHEDULING.md",
     "docs/INVARIANTS.md",
     "docs/TASK_STATE.md",
     "docs/MEMORY.md",
-    "docs/PERSONALIZATION.md"
+    "docs/PERSONALIZATION.md",
+    "docs/LLM_MODELS.md",
+    "docs/RAG.md",
+    "docs/INDEXING.md"
   ]
 }

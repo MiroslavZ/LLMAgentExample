@@ -1,18 +1,10 @@
 {
-    "files":[
-        "docs/CHAT.md",
-        "docs/DAY19_PLAN.md",
-        "docs/DAY20_PLAN.md",
-        "docs/DAY21_PLAN.md",
-        "docs/DAY22_PLAN.md",
-        "docs/DAY23_PLAN.md",
-        "docs/DAY24_PLAN.md",
-        "docs/DAY25_PLAN.md",
-        "docs/DAY25_RESULTS.md",
-        "docs/DAY26_RESULTS.md",
+    "files": [
+        "README.md",
+        "docs/PROJECT_STRUCTURE.md",
+        "docs/PROJECT_HELP.md",
         "docs/INDEXING.md",
         "docs/INVARIANTS.md",
-        "docs/LECTURE.md",
         "docs/LLM_MODELS.md",
         "docs/MCP.md",
         "docs/MEMORY.md",
@@ -20,7 +12,6 @@
         "docs/PERSONALIZATION.md",
         "docs/RAG.md",
         "docs/SCHEDULING.md",
-        "docs/TASK_STATE.md",
-        "docs/TASKS.md"
+        "docs/TASK_STATE.md"
     ]
 }

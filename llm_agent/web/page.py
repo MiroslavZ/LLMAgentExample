@@ -10,6 +10,7 @@ from ..llm_models import ModelStorageError
 from ..memory import MemoryStorageError
 from ..models import ContextSettings, Conversation, RequestOptions
 from ..profile import ProfileStorageError
+from ..project_help import parse_help
 from ..service import ConversationBusyError, ConversationService, ConversationStorageError
 from ..task_state import CONTINUE_TASK
 from .components import STRATEGIES, STRATEGY_HELP, empty_chat, render_turn
@@ -606,9 +607,14 @@ class ChatPage:
         self.meta_input.set_enabled(not self.busy and not active_task and not paused)
         if self.system_input:
             self.system_input.set_enabled(not self.busy)
-        self.send_button.set_enabled(
-            not self.busy and not paused and self.model_available and self.invariant_panel.available,
-        )
+        def update_send_button() -> None:
+            self.send_button.set_enabled(
+                not self.busy and self.model_available and self.invariant_panel.available
+                and (not paused or parse_help(self.user_input.value or "") is not None),
+            )
+
+        self.user_input.on_value_change(update_send_button)
+        update_send_button()
         if self.busy:
             self.send_button.props("loading")
 
@@ -744,7 +750,7 @@ class ChatPage:
             self.refresh()
             return
         task = self.snapshot.task_state
-        if task is not None and task.paused:
+        if task is not None and task.paused and parse_help(self.user_input.value or "") is None:
             ui.notify("Задача на паузе. Сначала возобновите её.", type="warning")
             return
         self.remember_draft()

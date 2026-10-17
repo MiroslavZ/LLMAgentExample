@@ -135,7 +135,7 @@ class ConversationStore:
         turn_fields = {field.name for field in fields(Turn)}
         for item in values["turns"]:
             optional_fields = {"tool_calls", "rag_enabled", "rag_context", "rag_settings", "rag_answer", "rag_preparation",
-                               "model_id", "model_name", "model_base_url"}
+                               "model_id", "model_name", "model_base_url", "project_help"}
             if (not isinstance(item, dict) or not set(item) <= turn_fields
                     or not turn_fields - optional_fields <= set(item)):
                 raise ValueError("Некорректный формат хода диалога")
@@ -190,6 +190,12 @@ class ConversationStore:
                     or usage["total_tokens"] != usage["prompt_tokens"] + usage["completion_tokens"]
                 ):
                     raise ValueError("Некорректные токены подготовки RAG")
+            if turn.project_help is not None:
+                from .project_help import parse_help, validate_help_context
+
+                validate_help_context(turn.project_help)
+                if parse_help(turn.user) != turn.project_help["question"] or not turn.rag_enabled:
+                    raise ValueError("Контекст помощи не соответствует команде")
             if turn.rag_answer is not None:
                 from .rag_answer import render_answer, validate_saved_answer
 
@@ -197,13 +203,23 @@ class ConversationStore:
                     raise ValueError("Ответ RAG сохранён без контекста")
                 validate_saved_answer(turn.rag_answer, turn.rag_context)
                 rendered = render_answer(turn.rag_answer, turn.options.response_format)
+                if turn.project_help is not None:
+                    from .project_help import render_help
+
+                    rendered = render_help(turn.project_help, turn.rag_answer, turn.options.response_format)
                 if turn.answer != rendered:
                     legacy_unknown = (
                         turn.rag_answer["status"] == "unknown"
                         and turn.options.response_format == "text"
                         and turn.answer == turn.rag_answer["answer"] + "\n\n" + turn.rag_answer["clarification"]
                     )
-                    if not legacy_unknown:
+                    legacy_git = (
+                        turn.project_help is not None
+                        and turn.answer == render_help(
+                            turn.project_help, turn.rag_answer, turn.options.response_format, include_commit=False,
+                        )
+                    )
+                    if not legacy_unknown and not legacy_git:
                         raise ValueError("Текст ответа RAG не совпадает с доказательствами")
                     turn.answer = rendered
             datetime.fromisoformat(turn.created_at)

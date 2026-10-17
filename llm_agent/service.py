@@ -6,9 +6,11 @@
 
 import threading
 import time
+import json
 from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from typing import Iterator
 from uuid import uuid4
@@ -35,6 +37,7 @@ from .tool_events import ToolCallRecord
 from .observations import ObservationReader, is_observation
 from .rag import RAGError, Retriever
 from .rag_dialogue import prepare_turn
+from .project_help import HELP_INSTRUCTION, ProjectHelpTools, new_help_context, parse_help, render_help
 from .structured_output import StructuredOutput, StructuredOutputError
 
 
@@ -89,7 +92,7 @@ class _ConversationHistory(HistoryManager):
 
     def add_rag_exchange(
         self, user: str, assistant: str, usage: TokenUsage | None, *,
-        rag_answer: dict, task_state: TaskState | None = None,
+        rag_answer: dict | None, task_state: TaskState | None = None,
     ) -> None:
         self._turn_updates = {
             "answer": assistant, "rag_answer": deepcopy(rag_answer), "status": "completed",
@@ -174,6 +177,41 @@ def _friendly_error(error: Exception) -> str:
     if isinstance(error, ValueError):
         return "Модель вернула некорректный результат обработки контекста. Можно повторить запрос."
     return "Не удалось выполнить запрос. Сохранённые этапы доступны в диалоге."
+
+
+class _ProjectHelpHistory(_ConversationHistory):
+    """Справка видит контекст, но не управляет сохранённым состоянием задачи."""
+
+    def __init__(self, store, conversation, started_at, help_context, tool_notice="") -> None:
+        self.help_context = help_context
+        self.tool_notice = tool_notice
+        super().__init__(store, conversation, started_at)
+
+    @property
+    def task_state(self) -> None:
+        return None
+
+    def get_messages(self, *, include_system: bool = True) -> list:
+        return [*super().get_messages(include_system=include_system),
+                {"role": "system", "content": HELP_INSTRUCTION + "\n" + self.tool_notice},
+                {"role": "user", "content": "Контекст проекта (JSON; null означает отсутствие данных):\n" + json.dumps(
+                    self.help_context, ensure_ascii=False,
+                )}]
+
+    def record_tool_call(self, record: ToolCallRecord) -> None:
+        self.conversation.turns[-1].project_help = deepcopy(self.help_context)
+        super().record_tool_call(record)
+
+    def add_rag_exchange(self, user, assistant, usage, *, rag_answer, task_state=None) -> None:
+        turn = self.conversation.turns[-1]
+        super().add_rag_exchange(
+            turn.user, render_help(turn.project_help, rag_answer, turn.options.response_format),
+            usage, rag_answer=rag_answer,
+        )
+
+    def add_refusal(self, user, assistant, usage) -> None:
+        turn = self.conversation.turns[-1]
+        super().add_refusal(turn.user, assistant, usage)
 
 
 class ConversationService:
@@ -499,6 +537,7 @@ class ConversationService:
         if not isinstance(options, RequestOptions):
             raise ValueError("Некорректные параметры запроса")
         options.validate()
+        help_question = parse_help(user)
         if settings is not None:
             self._validate_settings(settings)
         with self._operation(conversation_id):
@@ -506,7 +545,7 @@ class ConversationService:
             if conversation.busy:
                 raise ConversationBusyError("В этом диалоге уже выполняется запрос")
             task = conversation.task_state
-            if task is not None:
+            if task is not None and help_question is None:
                 if task.paused:
                     raise TaskStateError("Задача на паузе. Сначала возобновите её.")
                 if task.awaiting_approval and user.strip() == CONTINUE_TASK:
@@ -529,8 +568,8 @@ class ConversationService:
                 conversation.title = " ".join(user.split())[:56]
                 conversation.started = True
             conversation.turns.append(Turn(
-                user=user.strip(), options=options, rag_enabled=conversation.settings.rag_enabled,
-                rag_settings=conversation.settings.rag_options() if conversation.settings.rag_enabled else None,
+                user=user.strip(), options=options, rag_enabled=help_question is not None or conversation.settings.rag_enabled,
+                rag_settings=conversation.settings.rag_options() if help_question is not None or conversation.settings.rag_enabled else None,
                 model_id=model.model_id, model_name=model.name, model_base_url=model.base_url,
             ))
             conversation.updated_at = utc_now()
@@ -541,7 +580,51 @@ class ConversationService:
             compressions: list[CompressionResult] = []
             try:
                 output_policy = self._output_policy(model)
-                if conversation.settings.rag_enabled:
+                if help_question is not None:
+                    turn = conversation.turns[-1]
+                    help_context = new_help_context(help_question)
+                    turn.project_help = help_context
+                    help_tools = ProjectHelpTools(help_context, self.mcp_servers.list())
+                    self._save(conversation)
+                    try:
+                        rewrite = None
+                        if turn.rag_settings.rewrite_enabled:
+                            if user.strip() == "/help":
+                                # Синтетический вопрос не становится цитатой пользователя в памяти.
+                                rewrite = dict(query=help_question, status="fallback", elapsed_seconds=0.0,
+                                               usage=None, reason="Для /help без вопроса используется обзор структуры.")
+                            else:
+                                prepared = prepare_turn(
+                                    user.strip(), conversation.dialogue_task_memory, conversation.turns,
+                                    model.token, model.model_id, base_url=model.base_url, timeout=model.timeout,
+                                    rewrite_enabled=True, output_policy=output_policy,
+                                )
+                                conversation.dialogue_task_memory = prepared["memory"]
+                                turn.rag_preparation = prepared["diagnostic"]
+                                rewrite = prepared["rewrite"]
+                                rewrite["query"] = (
+                                    parse_help(rewrite["query"]) or rewrite["query"]
+                                    if rewrite["status"] == "success" else help_question
+                                )
+                                self._save(conversation)
+                        turn.rag_context = self.retriever.retrieve(
+                            help_question, turn.rag_settings, rewrite=rewrite,
+                        )
+                    except RAGError:
+                        help_context["index_error"] = (
+                            "Документация проекта недоступна: индекс отсутствует, повреждён или не удалось "
+                            "загрузить embedding-модель. Пересоберите индекс по инструкции docs/PROJECT_HELP.md "
+                            "и проверьте RAG_INDEX_PATH и RAG_CACHE_DIR."
+                        )
+                        turn.rag_context = {"index": str(self.retriever.path), "chunks": []}
+                    self._save(conversation)
+                    history = _ProjectHelpHistory(
+                        self.store, conversation, started_at, help_context,
+                        help_tools.unavailable_reason if model.tools_enabled else (
+                            "Вызов Git через MCP недоступен: включите поддержку инструментов в настройках модели."
+                        ),
+                    )
+                elif conversation.settings.rag_enabled:
                     rag_settings = conversation.turns[-1].rag_settings
                     prepared = prepare_turn(
                         user.strip(), conversation.dialogue_task_memory, conversation.turns,
@@ -559,7 +642,8 @@ class ConversationService:
                     self._save(conversation)
                 memory = self.memory.snapshot(conversation_id)
                 profile = self.profiles.selected(conversation_id)
-                history = _ConversationHistory(self.store, conversation, started_at)
+                if history is None:
+                    history = _ConversationHistory(self.store, conversation, started_at)
                 settings = conversation.settings
                 agent_options = {
                     "history": history, "timeout": model.timeout, "max_retries": 0,
@@ -568,34 +652,41 @@ class ConversationService:
                     "memory": memory,
                     "profile": profile,
                     "invariants": self.get_invariants(),
-                    "mcp_servers": self.mcp_servers.list(),
+                    "mcp_servers": self.mcp_servers.list() if help_question is None else [],
                     "on_tool_call": history.record_tool_call,
                     "on_compression": compressions.append,
                 }
+                if help_question is not None:
+                    agent_options.update(tool_catalog=help_tools, project_help_context=help_context)
                 if conversation.turns[-1].rag_context is not None:
                     agent_options["rag_context"] = conversation.turns[-1].rag_context
                     agent_options["rag_threshold"] = settings.rag_similarity_threshold
                     agent_options["dialogue_task_memory"] = conversation.dialogue_task_memory
-                if any(server.enabled for server in agent_options["mcp_servers"]) or any(
-                    is_observation(call) for turn in conversation.turns for call in turn.tool_calls
-                ) or any(
-                    turn.status in ("error", "partial", "interrupted") for turn in conversation.turns
-                ):
+                if help_question is None and (any(server.enabled for server in agent_options["mcp_servers"]) or any(
+                        is_observation(call) for turn in conversation.turns for call in turn.tool_calls
+                    ) or any(
+                        turn.status in ("error", "partial", "interrupted") for turn in conversation.turns
+                    )):
                     agent_options["observations"] = ObservationReader(conversation)
-                if settings.strategy in ("window", "facts"):
+                if help_question is None and settings.strategy in ("window", "facts"):
                     agent_options.update(strategy=settings.strategy, window_size=settings.window_size)
-                elif settings.strategy == "summary":
+                elif help_question is None and settings.strategy == "summary":
                     agent_options.update(last_messages=settings.last_messages, compress_every=settings.compress_every)
                 agent = Agent(model.token, **agent_options)
-                request = agent.request_with_meta_prompt if options.meta_prompt else agent.request
+                request = agent.request_with_meta_prompt if options.meta_prompt and help_question is None else agent.request
                 result = request(
-                    user.strip(), system=conversation.system_prompt,
+                    help_question if help_question is not None else user.strip(), system=conversation.system_prompt,
                     temperature=options.temperature, max_tokens=options.max_tokens,
                     model=model.model_id,
                     stop_sequences=options.stop_sequences,
                     response_format=options.response_format,
                 )
                 completed = deepcopy(history.conversation)
+                if help_question is not None:
+                    response = result.response.model_copy(deep=True)
+                    response.choices[0].message.content = completed.turns[-1].answer
+                    result = replace(result, response=response, answer=completed.turns[-1].answer,
+                                     tool_calls=tuple(completed.turns[-1].tool_calls))
             except Exception as error:
                 if history is not None:
                     conversation = deepcopy(history.pending_snapshot or history.conversation)

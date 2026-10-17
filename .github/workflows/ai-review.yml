@@ -1,0 +1,190 @@
+name: AI review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Номер открытого PR для проверки
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       !github.event.pull_request.draft &&
+       github.event.pull_request.user.login != 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Resolve PR revisions
+        id: pr
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        with:
+          script: |
+            if (!/^[1-9]\d*$/.test(process.env.PR_NUMBER || '')) {
+              throw new Error('Укажите положительный целый номер PR.');
+            }
+            const number = Number(process.env.PR_NUMBER);
+            const {data: current} = await github.rest.pulls.get({
+              ...context.repo, pull_number: number,
+            });
+            const sameRepository = current.head.repo?.full_name === `${context.repo.owner}/${context.repo.repo}`;
+            if (current.state !== 'open' || current.draft || !sameRepository ||
+                current.user.login === 'dependabot[bot]') {
+              core.setOutput('eligible', 'false');
+              await core.summary.addRaw('AI-ревью пропущено: нужны открытый PR из этого репозитория, без draft и Dependabot.').write();
+              return;
+            }
+            const snapshot = context.payload.pull_request || current;
+            if (snapshot.head.sha !== current.head.sha) {
+              core.setOutput('eligible', 'false');
+              await core.summary.addRaw('AI-ревью пропущено: событие относится к устаревшему коммиту PR.').write();
+              return;
+            }
+            for (const sha of [snapshot.base.sha, snapshot.head.sha]) {
+              if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('Некорректный SHA из GitHub API.');
+            }
+            core.setOutput('eligible', 'true');
+            core.setOutput('number', String(number));
+            core.setOutput('base', snapshot.base.sha);
+            core.setOutput('head', snapshot.head.sha);
+
+      - name: Checkout trusted reviewer from base
+        if: steps.pr.outputs.eligible == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.pr.outputs.base }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch PR head as Git data
+        if: steps.pr.outputs.eligible == 'true'
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.head }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          auth_header="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth_header"
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0="http.${GITHUB_SERVER_URL}/.extraheader" \
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth_header" \
+            git fetch --no-tags origin "$HEAD_SHA:refs/remotes/origin/ai-review-head"
+          test "$(git rev-parse refs/remotes/origin/ai-review-head)" = "$HEAD_SHA"
+          if [[ ! -f ai_review/__main__.py ]]; then
+            echo '::error::Сначала добавьте ai_review в целевую ветку PR. Затем запустите workflow вручную с номером PR.'
+            exit 1
+          fi
+
+      - name: Set up Python
+        if: steps.pr.outputs.eligible == 'true'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Test trusted reviewer
+        if: steps.pr.outputs.eligible == 'true'
+        run: python -m unittest discover -s ai_review/tests -v
+
+      - name: Generate review
+        id: generate
+        if: steps.pr.outputs.eligible == 'true'
+        env:
+          BASE_SHA: ${{ steps.pr.outputs.base }}
+          HEAD_SHA: ${{ steps.pr.outputs.head }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-flash' }}
+        shell: bash
+        run: |
+          if [[ -z "$DEEPSEEK_API_KEY" ]]; then
+            echo '::error::Не задан repository secret DEEPSEEK_API_KEY.'
+            exit 1
+          fi
+          python -m ai_review --repo . --base "$BASE_SHA" --head "$HEAD_SHA" --output ai_review/output
+
+      - name: Publish or update PR comment
+        if: steps.generate.outcome == 'success'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const number = Number(process.env.PR_NUMBER);
+            const {data: pr} = await github.rest.pulls.get({...context.repo, pull_number: number});
+            if (pr.state !== 'open' || pr.draft || pr.head.sha !== process.env.HEAD_SHA) {
+              core.notice('Комментарий пропущен: PR закрыт, переведён в draft или уже содержит новый коммит.');
+              return;
+            }
+            const marker = '<!-- ai-review -->';
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            let body = `${marker}\nПроверен коммит \`${process.env.HEAD_SHA}\`. [Запуск и полный отчёт](${runUrl}).\n\n`;
+            body += fs.readFileSync('ai_review/output/review.md', 'utf8');
+            // GitHub допускает до 65 536 символов; запас в байтах учитывает Unicode.
+            const maxBytes = 60000;
+            if (Buffer.byteLength(body, 'utf8') > maxBytes) {
+              const notice = `\n\nКомментарий сокращён. Полный review.md доступен в [артефакте запуска](${runUrl}).\n`;
+              const budget = maxBytes - Buffer.byteLength(notice, 'utf8');
+              let bytes = 0;
+              const prefix = [];
+              for (const char of body) {
+                bytes += Buffer.byteLength(char, 'utf8');
+                if (bytes > budget) break;
+                prefix.push(char);
+              }
+              body = prefix.join('') + notice;
+            }
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo, issue_number: number, per_page: 100,
+            });
+            const previous = comments.find(comment =>
+              comment.user?.type === 'Bot' && comment.user.login === 'github-actions[bot]' &&
+              comment.body?.startsWith(marker));
+            // Повторная проверка после чтения комментариев уменьшает окно гонки.
+            const {data: latest} = await github.rest.pulls.get({...context.repo, pull_number: number});
+            if (latest.state !== 'open' || latest.draft || latest.head.sha !== process.env.HEAD_SHA) {
+              core.notice('Комментарий пропущен: состояние PR изменилось во время подготовки публикации.');
+              return;
+            }
+            if (previous) {
+              await github.rest.issues.updateComment({...context.repo, comment_id: previous.id, body});
+            } else {
+              await github.rest.issues.createComment({...context.repo, issue_number: number, body});
+            }
+
+      - name: Write job summary
+        if: always() && steps.pr.outputs.eligible == 'true'
+        shell: bash
+        run: |
+          if [[ -f ai_review/output/review.md ]]; then
+            cat ai_review/output/review.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'AI-ревью не сформировано. Причина указана в завершившемся с ошибкой шаге.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload review artifacts
+        if: always() && steps.pr.outputs.eligible == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ai-review-pr-${{ steps.pr.outputs.number }}-${{ steps.pr.outputs.head }}
+          path: |
+            ai_review/output/review.md
+            ai_review/output/context.json
+            ai_review/output/result.json
+          if-no-files-found: ignore
+          retention-days: 7

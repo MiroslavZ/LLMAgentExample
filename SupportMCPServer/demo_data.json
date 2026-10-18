@@ -1,0 +1,72 @@
+{
+  "demo": true,
+  "users": [
+    {
+      "id": "u-alex",
+      "name": "Алексей (демо)",
+      "summary": "Документы проиндексированы, но RAG выключен в настройках чата.",
+      "environment": {"os": "Windows 11", "interface": "Веб-чат", "provider": "OpenRouter", "model": "openai/gpt-4o-mini"},
+      "settings": {"rag_enabled": false, "index_status": "ready", "mcp_enabled": true},
+      "observed_at": "2026-10-18T10:00:00+05:00"
+    },
+    {
+      "id": "u-maria",
+      "name": "Мария (демо)",
+      "summary": "RAG включён, но индекс документов ещё не построен.",
+      "environment": {"os": "Windows 11", "interface": "Веб-чат", "provider": "OpenRouter", "model": "openai/gpt-4o-mini"},
+      "settings": {"rag_enabled": true, "index_status": "missing", "mcp_enabled": true},
+      "observed_at": "2026-10-18T10:00:00+05:00"
+    },
+    {
+      "id": "u-ivan",
+      "name": "Иван (демо)",
+      "summary": "MCP-сервер добавлен, но его использование в чате выключено.",
+      "environment": {"os": "Ubuntu 24.04", "interface": "Веб-чат", "provider": "OpenRouter", "model": "openai/gpt-4o-mini"},
+      "settings": {"rag_enabled": true, "index_status": "ready", "mcp_enabled": false},
+      "observed_at": "2026-10-18T10:00:00+05:00"
+    }
+  ],
+  "tickets": [
+    {
+      "id": "t-rag-off", "user_id": "u-alex",
+      "subject": "Агент не использует документацию", "status": "open",
+      "error": "В ответе нет источников из документации. RAG выключен.",
+      "attempts": ["Перезапустил приложение", "Убедился, что индекс документов построен"],
+      "messages": [
+        {"role": "user", "content": "Почему агент не использует документацию?"},
+        {"role": "support", "content": "Уточните, включён ли RAG в настройках чата."},
+        {"role": "user", "content": "Приложение перезапустил, индекс уже есть. Настройки чата не менял."}
+      ]
+    },
+    {
+      "id": "t-index-missing", "user_id": "u-maria",
+      "subject": "Агент не использует документацию", "status": "waiting_user",
+      "error": "Индекс документов отсутствует при включённом RAG.",
+      "attempts": ["Включила RAG", "Скопировала документацию в папку docs"],
+      "messages": [
+        {"role": "user", "content": "Почему агент не использует документацию?"},
+        {"role": "support", "content": "После добавления документов нужен индекс. Сообщите, выполнялась ли индексация."},
+        {"role": "user", "content": "RAG включила, документы скопировала. Индексацию не запускала."}
+      ]
+    },
+    {
+      "id": "t-mcp-disabled", "user_id": "u-ivan",
+      "subject": "Агент не вызывает инструменты MCP", "status": "open",
+      "error": "Использование MCP-сервера в чате выключено.",
+      "attempts": ["Добавил адрес MCP-сервера", "Проверил подключение: список инструментов получен"],
+      "messages": [
+        {"role": "user", "content": "Подключение MCP проверку проходит, но агент не вызывает инструменты."},
+        {"role": "support", "content": "Проверка подключения и включение инструментов для чата — разные настройки."}
+      ]
+    },
+    {
+      "id": "t-setup-resolved", "user_id": "u-alex",
+      "subject": "Первый запуск веб-чата", "status": "resolved",
+      "error": "", "attempts": ["Установил зависимости", "Запустил веб-интерфейс"],
+      "messages": [
+        {"role": "user", "content": "Как открыть веб-чат?"},
+        {"role": "user", "content": "Разобрался по инструкции запуска, чат работает. Обращение решено."}
+      ]
+    }
+  ]
+}

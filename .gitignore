@@ -2,6 +2,7 @@
 /data/indexes/
 /data/model-cache/
 /data/rag-evaluation/
+/data/support/
 # Edit at https://www.toptal.com/developers/gitignore?templates=visualstudiocode,python,pycharm
 
 ### PyCharm ###

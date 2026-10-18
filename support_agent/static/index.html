@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f6f2">
+  <title>Поддержка LLMAgent</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="page-header">
+      <a class="brand" href="/" aria-label="Поддержка LLMAgent, главная">
+        <span class="brand-mark" aria-hidden="true">LA<span></span></span>
+        <span>LLMAgent<small>Поддержка пользователей</small></span>
+      </a>
+      <span class="demo-badge"><span aria-hidden="true"></span>Учебный сервис · демоданные</span>
+    </header>
+
+    <main class="support-layout">
+      <aside class="sidebar" aria-label="Пользователь и обращения">
+        <div class="sidebar-heading"><span class="eyebrow">Ваш контекст</span><h1>Давайте разберёмся.</h1><p>Помощь по агенту с учётом вашей настройки и обращения.</p></div>
+        <section class="user-section">
+          <label for="user-select">Демонстрационный пользователь</label>
+          <select id="user-select" disabled><option value="">Загружаем пользователей…</option></select>
+          <p id="user-summary" class="user-summary"></p>
+        </section>
+        <section class="tickets-section" aria-labelledby="tickets-heading">
+          <div class="section-heading"><h2 id="tickets-heading">Обращения</h2><span id="ticket-count" class="count">0</span></div>
+          <div id="ticket-list" class="ticket-list"><p class="muted">Загружаем обращения…</p></div>
+        </section>
+        <div class="demo-note"><span class="note-symbol" aria-hidden="true">i</span><p>Пользователи и обращения вымышлены. Выберите профиль, чтобы посмотреть, как меняется ответ.</p></div>
+      </aside>
+
+      <section class="conversation" aria-labelledby="conversation-title">
+        <header class="conversation-header">
+          <div class="conversation-title-group"><div class="assistant-label"><span aria-hidden="true"></span>Ассистент поддержки</div><h2 id="conversation-title">Общий вопрос</h2><p id="conversation-subtitle">По документации LLMAgent</p></div>
+          <button id="reset-button" class="button button-secondary" type="button" disabled><span aria-hidden="true">↺</span> Новый диалог</button>
+        </header>
+
+        <div id="error-banner" class="error-banner" role="alert" hidden><p id="error-message"></p><button id="retry-button" class="text-button" type="button" hidden>Повторить загрузку</button></div>
+        <div id="loading-state" class="loading-state" role="status"><span class="spinner" aria-hidden="true"></span>Загружаем диалог…</div>
+
+        <div id="chat-scroll" class="chat-scroll">
+          <div id="empty-state" class="empty-state" hidden>
+            <div class="welcome-mark" aria-hidden="true">?</div>
+            <span class="eyebrow">Помощь рядом</span>
+            <h3>Что не получается?</h3>
+            <p id="empty-description">Расскажите, что хотите сделать и что происходит. Ассистент найдёт подходящую инструкцию в документации.</p>
+            <div id="examples" class="examples" aria-label="Примеры вопросов"></div>
+          </div>
+          <div id="messages" class="messages" role="log" aria-label="Переписка с поддержкой" aria-live="polite" aria-relevant="additions"></div>
+          <div id="thinking" class="thinking" role="status" hidden><span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>Проверяю документацию и контекст…</span></div>
+        </div>
+
+        <form id="chat-form" class="composer">
+          <label class="sr-only" for="message-input">Ваш вопрос</label>
+          <textarea id="message-input" name="message" rows="2" maxlength="4000" placeholder="Опишите проблему или задайте вопрос…" disabled></textarea>
+          <div class="composer-actions"><p>Enter — отправить<span> · Shift + Enter — новая строка</span></p><button id="send-button" class="button button-primary" type="submit" disabled>Отправить <span aria-hidden="true">↗</span></button></div>
+          <p class="composer-note">В диалоге сохраняются последние 5 вопросов и ответов. Ассистент объясняет шаги, настройки не изменяет.</p>
+        </form>
+      </section>
+    </main>
+    <footer class="page-footer"><span>LLMAgent / Центр поддержки</span><span>Документация + контекст обращения</span></footer>
+  </div>
+</body>
+</html>
